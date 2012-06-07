@@ -1,0 +1,4 @@
+clean up optional arguments
+formalize tests
+comments
+haddock

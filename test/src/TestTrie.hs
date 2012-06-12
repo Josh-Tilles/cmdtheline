@@ -1,3 +1,7 @@
+{- Copyright © 2012, Vincent Elisha Lee Frey.  All rights reserved.
+ - This is open source software distributed under a MIT license.
+ - See the file 'LICENSE' for further information.
+ -}
 import Prelude hiding ( lookup )
 import System.Console.CmdTheLine.Trie
 import Control.Arrow ( first )

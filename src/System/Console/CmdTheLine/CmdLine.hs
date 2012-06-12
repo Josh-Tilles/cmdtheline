@@ -1,3 +1,7 @@
+{- Copyright © 2012, Vincent Elisha Lee Frey.  All rights reserved.
+ - This is open source software distributed under a MIT license.
+ - See the file 'LICENSE' for further information.
+ -}
 module System.Console.CmdTheLine.CmdLine where
 
 import System.Console.CmdTheLine.Common
@@ -13,17 +17,17 @@ import Data.List ( sort )
 
 optArg :: CmdLine -> ArgInfo -> [( Int, String, Maybe String )]
 optArg cl ai = case M.lookup ai cl of
-  Nothing  -> error "ArgInfo passed to optArg does not index CmdLine"
-  (Just a) -> case a of
-    (Opt opt) -> opt
-    _         -> error "ArgInfo passed to optArg indexes to positional argument"
+  Nothing -> error "ArgInfo passed to optArg does not index CmdLine"
+  Just a  -> case a of
+    Opt opt -> opt
+    _       -> error "ArgInfo passed to optArg indexes to positional argument"
 
 posArg :: CmdLine -> ArgInfo -> [String]
 posArg cl ai = case M.lookup ai cl of
-  Nothing  -> error "ArgInfo passed to posArg does not index CmdLine"
-  (Just a) -> case a of
-    (Pos opt) -> opt
-    _         -> error "ArgInfo passed to posArg indexes to positional argument"
+  Nothing -> error "ArgInfo passed to posArg does not index CmdLine"
+  Just a  -> case a of
+    Pos opt -> opt
+    _       -> error "ArgInfo passed to posArg indexes to positional argument"
 
 chooseTerm :: TermInfo -> [( TermInfo, a )] -> [String]
            -> Err ( TermInfo, [String] )
@@ -32,15 +36,15 @@ chooseTerm ti choices args@( arg : rest )
   | length arg > 1 && head arg == '-' = Right ( ti, args )
 
   | otherwise = case T.lookup arg index of
-    (Right choice)      -> Right ( choice, rest )
-    (Left  T.NotFound)  -> Left $ E.unknown   com (text arg)
-    (Left  T.Ambiguous) -> Left $ E.ambiguous com (text arg) ambs
+    Right choice      -> Right ( choice, rest )
+    Left  T.NotFound  -> Left . UsageFail $ E.unknown   (text com) (text arg)
+    Left  T.Ambiguous -> Left . UsageFail . text $ E.ambiguous com arg ambs
     where
     index = foldl add T.empty choices
       where
       add acc ( choice, _ ) = T.add acc (name choice) choice
 
-    com  = text "command"
+    com  = "command"
     ambs = sort $ T.ambiguities index arg
 
 {- Returns a trie mapping the names of optional arguments to their ArgInfo, a
@@ -71,8 +75,8 @@ parseOptArg str
        else ( take 2 str, Just $ drop 2 str )
 
   | otherwise       = case P.parse assignment "" str of
-    (Left _)       -> ( str, Nothing )
-    (Right result) -> result
+    Left _       -> ( str, Nothing )
+    Right result -> result
     where
     assignment = do
       label <- P.many1 $ P.satisfy (/= '=')
@@ -98,12 +102,12 @@ parseArgs opti cl args = go 1 opti cl [] args
     isOpt str = length str > 1 && head str == '-'
 
     consume str args = case T.lookup name opti of
-      (Left  T.NotFound)  -> Left unknown
-      (Left  T.Ambiguous) -> Left ambiguous
-      (Right a)           -> result a
+      Left  T.NotFound  -> Left $ UsageFail unknown
+      Left  T.Ambiguous -> Left $ UsageFail ambiguous
+      Right a           -> result a
       where
       unknown   = E.unknown   (text "option") (text name)
-      ambiguous = E.ambiguous (text "option") (text name) ambs
+      ambiguous = text $ E.ambiguous "option" name ambs
         where
         ambs = sort $ T.ambiguities opti name
 
@@ -131,7 +135,7 @@ processPosArgs :: [ArgInfo] -> CmdLine -> [String] -> Err CmdLine
 processPosArgs _       cl []   = Right cl
 processPosArgs posInfo cl args
   | last <= maxSpec = Right cl'
-  | otherwise       = Left  excess
+  | otherwise       = Left  $ UsageFail excess
   where
   last   = length args
   excess = E.posExcess . map text $ drop maxSpec args
@@ -143,10 +147,10 @@ processPosArgs posInfo cl args
     where
     cl'               = M.insert ai arg cl
     ( arg, maxSpec' ) = case posKind ai of
-      PosAny         -> ( Pos args, last )
-      (PosN rev pos) -> result rev pos False indexPositions
-      (PosL rev pos) -> result rev pos False take
-      (PosR rev pos) -> result rev pos True  (takeEnd . (last -))
+      PosAny       -> ( Pos args, last )
+      PosN rev pos -> result rev pos False indexPositions
+      PosL rev pos -> result rev pos False take
+      PosR rev pos -> result rev pos True  (takeEnd . (last -))
 
     takeEnd n = reverse . take n . reverse
 

@@ -3,55 +3,69 @@
  - See the file 'LICENSE' for further information.
  -}
 {-# LANGUAGE FlexibleInstances #-}
-module System.Console.CmdTheLine.Arg where
+module System.Console.CmdTheLine.Arg
+  ( ArgVal(..), ArgParser, ArgPrinter
+  , fromParsec, just, maybePP, enum
+
+  , info
+
+  , flag, flagAll, vFlag, vFlagAll
+  , opt, defaultOpt, optAll, defaultOptAll
+  , pos, revPos, posAny, posLeft, posRight, revPosLeft, revPosRight
+
+  , absent, required, nonEmpty, lastOf
+  ) where
 
 import System.Console.CmdTheLine.Common
 import System.Console.CmdTheLine.CmdLine
 import qualified System.Console.CmdTheLine.Err  as E
 import qualified System.Console.CmdTheLine.Trie as T
 
-import Data.Char
-import Control.Applicative hiding ( (<|>) )
+import Data.Function ( on )
+import Control.Applicative hiding ( (<|>), empty )
 import Text.PrettyPrint
 import Text.Parsec
 
 import Data.Unique
+import Data.Default
 import Data.List ( sort, sortBy )
 import Data.Ratio ( Ratio )
-import System.IO.Unsafe ( unsafePerformIO )
+
+import System.IO.Unsafe
 
 argFail :: Doc -> Err a
 argFail = Left . MsgFail
 
-info :: Maybe String -> Maybe String -> Maybe String -> [String]
-     -> ArgInfo
-info docTitle docName doc names = ArgInfo
+info :: [String] -> ArgInfo
+info names = ArgInfo
   { ident      = unsafePerformIO newUnique
   , absence    = Present ""
-  , doc        = maybe ""           id doc
-  , docName    = maybe ""           id docName
-  , docTitle   = maybe defaultTitle id docTitle
+  , argDoc     = ""
+  , argName    = ""
+  , argHeading = defaultHeading
   , posKind    = PosAny
   , optKind    = FlagKind
-  , optNames   = reverse $ map dash names
+  , optNames   = map dash names
   , repeatable = False
   }
   where
-  defaultTitle
+  defaultHeading
     | names == [] = "ARGUMENTS"
     | otherwise   = "OPTIONS"
 
-  dash str
-    | length str == 1 = "-" ++ str
-    | otherwise       = "--" ++ str
+  dash "" = error "System.Console.CmdTheLine.Arg.info "
+               ++ "recieved empty string as name"
+  dash str@[_] = "-"  ++ str
+  dash str     = "--" ++ str
+{-# NOINLINE info #-}
 
 flag :: ArgInfo -> Term Bool
 flag ai =
   if isPos ai
      then error E.errNotPos
-     else Term [ai] convert
+     else Term [ai] yield
   where
-  convert _ cl = case optArg cl ai of
+  yield _ cl = case optArg cl ai of
     []                  -> Right   False
     [( _, _, Nothing )] -> Right   True
     [( _, f, Just v  )] -> argFail $ E.flagValue (text f) (text v)
@@ -63,26 +77,26 @@ flag ai =
 flagAll :: ArgInfo -> Term [Bool]
 flagAll ai
   | isPos ai  = error E.errNotPos
-  | otherwise = Term [ai'] convert
+  | otherwise = Term [ai'] yield
   where
   ai' = ai { repeatable = True }
 
-  convert _ cl = case optArg cl ai' of
+  yield _ cl = case optArg cl ai' of
     [] -> Right []
-    xs -> reverse <$> mapM truth xs
+    xs -> mapM truth xs
 
   truth ( _, f, mv ) = case mv of
     Nothing -> Right   True
     Just v  -> argFail $ E.flagValue (text f) (text v)
 
 vFlag :: a -> [( a, ArgInfo )] -> Term a
-vFlag v assoc = Term (reverse $ map flag assoc) convert
+vFlag v assoc = Term (map flag assoc) yield
   where
   flag ( _, a )
     | isPos a   = error E.errNotPos
     | otherwise = a
 
-  convert _ cl = go Nothing assoc
+  yield _ cl = go Nothing assoc
     where
     go mv [] = case mv of
       Nothing       -> Right v
@@ -102,16 +116,16 @@ vFlag v assoc = Term (reverse $ map flag assoc) convert
        _           ) -> argFail $ E.optRepeated (text g) (text f)
 
 vFlagAll :: Ord a => [a] -> [( a, ArgInfo)] -> Term [a]
-vFlagAll vs assoc = Term (reverse $ map flag assoc) convert
+vFlagAll vs assoc = Term (map flag assoc) yield
   where
   flag ( _, a ) 
     | isPos a   = error E.errNotOpt
     | otherwise = a { repeatable = True }
 
-  convert _ cl = go [] assoc
+  yield _ cl = go [] assoc
     where
     go []  [] = Right vs
-    go acc [] = Right . reverse . map snd $ sortBy descCompare acc
+    go acc [] = Right . map snd $ sort acc
 
     go acc (( mv, a ) : rest) = case optArg cl a of
       [] -> go acc rest
@@ -119,7 +133,7 @@ vFlagAll vs assoc = Term (reverse $ map flag assoc) convert
         acc' <- accumulate xs
         go acc' rest
       where
-      accumulate assoc = reverse . (++ acc) . reverse <$> mapM fval assoc
+      accumulate assoc = (++ acc) <$> mapM fval assoc
       fval ( pos, f, mv' ) = case mv' of
         Nothing -> Right   ( pos, mv )
         Just v  -> argFail $ E.flagValue (text f) (text v)
@@ -131,24 +145,24 @@ vFlagAll vs assoc = Term (reverse $ map flag assoc) convert
 
 parseOptValue :: ArgVal a => String -> String -> Err a
 parseOptValue f v = case parser v of
-  Left e  -> Left  . UsageFail $ E.optParseValue (text f) (text e)
+  Left  e -> Left  . UsageFail $ E.optParseValue (text f) e
   Right v -> Right v
 
-opt :: ArgVal a => Maybe a -> a -> ArgInfo -> Term a
-opt mv v ai
+mkOpt :: ArgVal a => Maybe a -> a -> ArgInfo -> Term a
+mkOpt vopt v ai
   | isPos ai  = error E.errNotOpt
-  | otherwise = Term [ai'] convert
+  | otherwise = Term [ai'] yield
     where
     ai' = ai { absence = Present . show $ pp v
-             , optKind = case mv of
+             , optKind = case vopt of
                  Nothing -> OptKind
                  Just dv -> OptVal . show $ pp dv
              }
-    convert _ cl = case optArg cl ai' of
+    yield _ cl = case optArg cl ai' of
       []                  -> Right v
       [( _, f, Just v )]  -> parseOptValue f v
 
-      [( _, f, Nothing )] -> case mv of
+      [( _, f, Nothing )] -> case vopt of
         Nothing   -> argFail $ E.optValueMissing (text f)
         Just optv -> Right   optv
 
@@ -156,112 +170,116 @@ opt mv v ai
        ( _, g, _ ) :
        _           ) -> argFail $ E.optRepeated (text g) (text f)
 
-opt' :: ArgVal a => a -> ArgInfo -> Term a
-opt' = opt Nothing
+opt :: ArgVal a => a -> ArgInfo -> Term a
+opt = mkOpt Nothing
 
-optAll :: ( ArgVal a, Ord a ) => Maybe a -> [a] -> ArgInfo -> Term [a]
-optAll mv vs ai
+defaultOpt :: ArgVal a => a -> a -> ArgInfo -> Term a
+defaultOpt x = mkOpt $ Just x
+
+mkOptAll :: ( ArgVal a, Ord a ) => Maybe a -> [a] -> ArgInfo -> Term [a]
+mkOptAll vopt vs ai
   | isPos ai  = error E.errNotOpt
-  | otherwise = Term [ai'] convert
+  | otherwise = Term [ai'] yield
     where
     ai' = ai { absence    = Present ""
              , repeatable = True
-             , optKind    = case mv of
+             , optKind    = case vopt of
                  Nothing -> OptKind
                  Just dv -> OptVal . show $ pp dv
              }
 
-    convert _ cl = case optArg cl ai' of
+    yield _ cl = case optArg cl ai' of
       [] -> Right vs
       xs -> map snd . sort <$> mapM parse xs
 
     parse ( pos, f, mv' ) = case mv' of
-      (Just v) -> (,) pos <$> parseOptValue f v
-      Nothing  -> case mv of
+      Just v  -> (,) pos <$> parseOptValue f v
+      Nothing -> case vopt of
         Nothing -> argFail $ E.optValueMissing (text f)
         Just dv -> Right   ( pos, dv )
 
-parsePosValue :: ArgVal a => ArgInfo -> String -> Err a
-parsePosValue ai v = case parser v of
-  Left  e -> Left  . UsageFail . E.posParseValue ai $ text e
-  Right v -> Right v
+optAll :: ( ArgVal a, Ord a ) => [a] -> ArgInfo -> Term [a]
+optAll = mkOptAll Nothing
+
+defaultOptAll :: ( ArgVal a, Ord a ) => a -> [a] -> ArgInfo -> Term [a]
+defaultOptAll x = mkOptAll $ Just x
 
 
 --
 -- Positional arguments.
 --
 
-pos :: ArgVal a => Maybe Bool -> Int -> a -> ArgInfo -> Term a
-pos mRev pos v ai = Term [ai] convert
+parsePosValue :: ArgVal a => ArgInfo -> String -> Err a
+parsePosValue ai v = case parser v of
+  Left  e -> Left  . UsageFail $ E.posParseValue ai e
+  Right v -> Right v
+
+mkPos :: ArgVal a => Bool -> Int -> a -> ArgInfo -> Term a
+mkPos rev pos v ai = Term [ai] yield
   where
-  rev = maybe False id mRev
   ai' = ai { absence = Present . show $ pp v
            , posKind = PosN rev pos
            }
-  convert _ cl = case posArg cl ai' of
+  yield _ cl = case posArg cl ai' of
     []  -> Right v
     [v] -> parsePosValue ai' v
     _   -> error "saw list with more than one member in pos converter"
 
+pos, revPos :: ArgVal a => Int -> a -> ArgInfo -> Term a
+pos    = mkPos False
+revPos = mkPos True
+
 posList :: ArgVal a => PosKind -> [a] -> ArgInfo -> Term [a]
 posList kind vs ai
   | isOpt ai  = error E.errNotPos
-  | otherwise = Term [ai'] convert
+  | otherwise = Term [ai'] yield
     where
     ai' = ai { posKind = kind }
-    convert _ cl = case posArg cl ai' of
+    yield _ cl = case posArg cl ai' of
       [] -> Right vs
       xs -> mapM (parsePosValue ai') xs
 
-posAll :: ArgVal a => [a] -> ArgInfo -> Term [a]
-posAll = posList PosAny
+posAny :: ArgVal a => [a] -> ArgInfo -> Term [a]
+posAny = posList PosAny
 
-posLeft, posRight :: ArgVal a
-                  => Maybe Bool -> Int -> [a] -> ArgInfo -> Term [a]
+posLeft, posRight, revPosLeft, revPosRight
+  :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
 
-posLeft mRev pos = posList $ PosL rev pos
-  where
-  rev = maybe False id mRev
-
-posRight mRev pos = posList $ PosR rev pos
-  where
-  rev = maybe False id mRev
-
-posLeft', posRight' :: ArgVal a
-                    => Int -> [a] -> ArgInfo -> Term [a]
-posLeft'  = posLeft  Nothing
-posRight' = posRight Nothing
+posLeft     = posList . PosL False
+posRight    = posList . PosR False
+revPosLeft  = posList . PosL True
+revPosRight = posList . PosR True
 
 
 --
 -- Arguments as terms.
 --
 
-absentError = reverse . map (\ a -> a { absence = Absent })
+absent = map (\ a -> a { absence = Absent })
 
 required :: Term (Maybe a) -> Term a
-required (Term as convert) = Term as' convert'
+required (Term ais yield) = Term ais' yield'
   where
-  as' = absentError as
-  convert' ei cl = case convert ei cl of
+  ais' = absent ais
+  yield' ei cl = case yield ei cl of
     Left  e  -> Left  e
-    Right mv -> maybe (argFail . E.argMissing $ head as') Right mv
+    Right mv -> maybe (argFail . E.argMissing $ head ais') Right mv
 
 nonEmpty :: Term [a] -> Term [a]
-nonEmpty (Term as convert) = Term as' convert'
+nonEmpty (Term ais yield) = Term ais' yield'
   where
-  as' = absentError as
-  convert' ei cl = case convert ei cl of
+  ais' = absent ais
+  yield' ei cl = case yield ei cl of
     Left  e  -> Left    e
-    Right [] -> argFail . E.argMissing $ head as'
+    Right [] -> argFail . E.argMissing $ head ais'
     Right xs -> Right   xs
 
 lastOf :: Term [a] -> Term a
-lastOf (Term as convert) = Term as convert'
+lastOf (Term ais yield) = Term ais yield'
   where
-  convert' ei cl = case convert ei cl of
+  yield' ei cl = case yield ei cl of
     Left e   -> Left    e
-    Right [] -> argFail . E.argMissing $ head as
+    Right [] -> argFail . E.argMissing $ head ais
     Right xs -> Right   $ last xs
 
 
@@ -269,12 +287,11 @@ lastOf (Term as convert) = Term as convert'
 -- ArgVal
 --
 
-type ArgParser  a = String -> Either String a
-type ArgPrinter a = a -> String
+type ArgParser  a = String -> Either Doc a
+type ArgPrinter a = a -> Doc
 
 decPoint      = string "."
 digits        = many1 digit
-concatParsers :: [Parsec String () [a]] -> Parsec String () [a]
 concatParsers = foldl (liftA2 (++)) $ return []
 
 pInteger  :: ( Read a, Integral a ) => Parsec String () a
@@ -282,22 +299,27 @@ pFloating :: ( Read a, Floating a ) => Parsec String () a
 pInteger      = read <$> digits
 pFloating     = read <$> concatParsers [ digits, decPoint, digits ]
 
-fromParsec :: ( String -> String) -> Parsec String () a -> ArgParser a
+fromParsec :: ( String -> Doc) -> Parsec String () a -> ArgParser a
 fromParsec onErr p str = either (const . Left $ onErr str) Right
                        $ parse p "" str
 
-just :: ArgParser a -> ArgParser (Maybe a)
-just p = either Left (Right . Just) . p
+just :: ArgVal a => ArgParser (Maybe a)
+just = either Left (Right . Just) . parser
+
+maybePP :: ArgVal a => ArgPrinter (Maybe a)
+maybePP = maybe empty id . fmap pp
 
 enum :: [( String, a )] -> ArgParser a
 enum assoc str = case T.lookup str trie of
   Right v           -> Right v
   Left  T.Ambiguous -> Left  $ E.ambiguous "enum value" str ambs
-  Left  T.NotFound  -> Left  . E.invalidVal str $ "expected " ++ E.alts alts
+  Left  T.NotFound  -> Left  . E.invalidVal (text str) $ text "expected" <+> alts
   where
   ambs = sort $ T.ambiguities trie str
-  alts = map fst assoc
+  alts = E.alts $ map fst assoc
   trie = T.fromList assoc
+
+invalidVal = E.invalidVal `on` text
 
 class ArgVal a where
   parser  :: ArgParser a
@@ -307,37 +329,62 @@ instance ArgVal Bool where
   parser   = fromParsec onErr
            $ (True <$ string "true") <|> (False <$ string "false")
     where
-    onErr str = E.invalidVal str $ E.alts [ "true", "false" ]
+    onErr str = E.invalidVal (text str) $ E.alts [ "true", "false" ]
 
-  pp = show
+  pp True  = text "true"
+  pp False = text "false"
+
+instance ArgVal (Maybe Bool) where
+  parser = just
+  pp     = maybePP
 
 instance ArgVal [Char] where
   parser = Right
-  pp = show
+  pp = text
+
+instance ArgVal (Maybe [Char]) where
+  parser = just
+  pp     = maybePP
 
 instance ArgVal Int where
   parser = fromParsec onErr pInteger
     where
-    onErr str = E.invalidVal str "expected an integer"
-  pp = show
+    onErr str = invalidVal str "expected an integer"
+  pp = int
+
+instance ArgVal (Maybe Int) where
+  parser = just
+  pp     = maybePP
 
 instance ArgVal Integer where
   parser = fromParsec onErr pInteger
     where
-    onErr str = E.invalidVal str "expected an integer"
-  pp = show
+    onErr str = invalidVal str "expected an integer"
+  pp = integer
+
+instance ArgVal (Maybe Integer) where
+  parser = just
+  pp     = maybePP
 
 instance ArgVal Float where
   parser = fromParsec onErr pFloating
     where
-    onErr str = E.invalidVal str "expected a floating point number"
-  pp = show
+    onErr str = invalidVal str "expected a floating point number"
+  pp = float
+
+instance ArgVal (Maybe Float) where
+  parser = just
+  pp     = maybePP
 
 instance ArgVal Double where
   parser = fromParsec onErr pFloating
     where
-    onErr str = E.invalidVal str "expected a floating point number"
-  pp = show
+    onErr str = invalidVal str "expected a floating point number"
+  pp = double
+
+instance ArgVal (Maybe Double) where
+  parser = just
+  pp     = maybePP
 
 instance ArgVal (Ratio Integer) where
   parser = fromParsec onErr
@@ -347,5 +394,9 @@ instance ArgVal (Ratio Integer) where
                                   ]
     where
     onErr str =
-      E.invalidVal str "expected a ratio in the form `numerator % denominator'"
-  pp = show
+      invalidVal str "expected a ratio in the form `numerator % denominator'"
+  pp = rational
+
+instance ArgVal (Maybe (Ratio Integer)) where
+  parser = just
+  pp     = maybePP

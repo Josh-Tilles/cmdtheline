@@ -2,7 +2,8 @@
  - This is open source software distributed under a MIT license.
  - See the file 'LICENSE' for further information.
  -}
-module System.Console.CmdTheLine.CmdLine where
+module System.Console.CmdTheLine.CmdLine
+  ( create, optArg, posArg ) where
 
 import System.Console.CmdTheLine.Common
 import System.Console.CmdTheLine.Err as E
@@ -13,7 +14,8 @@ import Text.Parsec as P
 import qualified System.Console.CmdTheLine.Trie as T
 import qualified Data.Map as M
 
-import Data.List ( sort )
+import Data.List     ( sort )
+import Data.Function ( on )
 
 optArg :: CmdLine -> ArgInfo -> [( Int, String, Maybe String )]
 optArg cl ai = case M.lookup ai cl of
@@ -28,24 +30,6 @@ posArg cl ai = case M.lookup ai cl of
   Just a  -> case a of
     Pos opt -> opt
     _       -> error "ArgInfo passed to posArg indexes to positional argument"
-
-chooseTerm :: TermInfo -> [( TermInfo, a )] -> [String]
-           -> Err ( TermInfo, [String] )
-chooseTerm ti _       []              = Right ( ti, [] )
-chooseTerm ti choices args@( arg : rest )
-  | length arg > 1 && head arg == '-' = Right ( ti, args )
-
-  | otherwise = case T.lookup arg index of
-    Right choice      -> Right ( choice, rest )
-    Left  T.NotFound  -> Left . UsageFail $ E.unknown   (text com) (text arg)
-    Left  T.Ambiguous -> Left . UsageFail . text $ E.ambiguous com arg ambs
-    where
-    index = foldl add T.empty choices
-      where
-      add acc ( choice, _ ) = T.add acc (name choice) choice
-
-    com  = "command"
-    ambs = sort $ T.ambiguities index arg
 
 {- Returns a trie mapping the names of optional arguments to their ArgInfo, a
  - list with all ArgInfo for positional arguments, and a CmdLine mapping each
@@ -69,10 +53,10 @@ argInfoIndexes ais = go T.empty [] M.empty ais
 
 parseOptArg :: String -> ( String, Maybe String )
 parseOptArg str
-  | str !! 2 /= '-' =
+  | str !! 1 /= '-' =
     if length str == 2
        then ( str,        Nothing )
-       else ( take 2 str, Just $ drop 2 str )
+       else ( take 3 str, Just $ drop 3 str )
 
   | otherwise       = case P.parse assignment "" str of
     Left _       -> ( str, Nothing )
@@ -91,41 +75,38 @@ parseArgs :: T.Trie ArgInfo -> CmdLine -> [String]
 parseArgs opti cl args = go 1 opti cl [] args
   where
   go k opti cl pargs args = case args of
-    []            -> Right ( cl, reverse pargs )
-    ("--" : args) -> Right ( cl, reverse $ pargs ++ args )
+    []            -> Right ( cl, reverse pargs)
+    ("--" : rest) -> Right ( cl, reverse $ pargs ++ rest )
 
-    (str : args)  ->
+    (str : rest)  ->
       if not $ isOpt str
-         then go (k + 1) opti cl (str : pargs) args
-         else consume str args
+         then go (k + 1) opti cl (str : pargs) rest
+         else consume str rest
     where
     isOpt str = length str > 1 && head str == '-'
 
     consume str args = case T.lookup name opti of
       Left  T.NotFound  -> Left $ UsageFail unknown
       Left  T.Ambiguous -> Left $ UsageFail ambiguous
-      Right a           -> result a
+      Right ai          -> result ai
       where
-      unknown   = E.unknown   (text "option") (text name)
-      ambiguous = text $ E.ambiguous "option" name ambs
+      unknown   = E.unknown   "option" name
+      ambiguous = E.ambiguous "option" name ambs
         where
         ambs = sort $ T.ambiguities opti name
 
       ( name, value ) = parseOptArg str
 
-      result a = go (k + 1) opti (M.insert a arg' cl) pargs args'
+      result ai = go (k + 1) opti (M.insert ai arg' cl) pargs args'
         where
-        arg' = Opt $ ( k, name, value' ) : optArg cl a
+        arg' = Opt $ ( k, name, value' ) : optArg cl ai
 
-        ( value', args' ) =
-          if value /= Nothing || optKind a == FlagKind
-             then ( value, args )
-             else bifurcate args
-
-        bifurcate args@[]         = ( Nothing, args )
-        bifurcate args@(v : rest)
-          | isOpt v   = ( Nothing, args )
-          | otherwise = ( Just v,  rest )
+        ( value', args' )
+          | value /= Nothing || optKind ai == FlagKind ||
+            args == []       || isOpt (head args)      = ( value, args )
+          | otherwise                                  = ( Just $ head args
+                                                         , tail args
+                                                         )
 
 {- Returns an updated CmdLine in which each positional arg mentioned in the
  - the list index `posInfo`, is given a value according the list of positional
@@ -138,9 +119,11 @@ processPosArgs posInfo cl args
   | otherwise       = Left  $ UsageFail excess
   where
   last   = length args
-  excess = E.posExcess . map text $ drop maxSpec args
+  excess = E.posExcess . map text $ takeEnd (last - maxSpec) args
 
-  ( cl', maxSpec ) = go cl 0 posInfo
+  ( cl', maxSpec ) = go cl (-1) posInfo
+
+  takeEnd n = reverse . take n . reverse
 
   go cl maxSpec []         = ( cl, maxSpec )
   go cl maxSpec (ai : ais) = go cl' maxSpec' ais
@@ -152,14 +135,11 @@ processPosArgs posInfo cl args
       PosL rev pos -> result rev pos False take
       PosR rev pos -> result rev pos True  (takeEnd . (last -))
 
-    takeEnd n = reverse . take n . reverse
+    indexPositions pos args = [args !! (pos+1)]
 
-    indexPositions pos args = [args !! pos]
-
-    result rev pos maxIsLast getPositions =
-      if pos' < 1 || pos' > last
-         then ( Pos [],                       maxSpec'' )
-         else ( Pos $ getPositions pos' args, maxSpec'' )
+    result rev pos maxIsLast getPositions
+      | pos' < 0 || pos' > last = ( Pos [],                       maxSpec'' )
+      | otherwise               = ( Pos $ getPositions pos' args, maxSpec'' )
       where
       pos'      = if rev       then last - pos else pos
       maxSpec'' = if maxIsLast then last       else max pos' maxSpec
@@ -167,6 +147,6 @@ processPosArgs posInfo cl args
 create :: [ArgInfo] -> [String] -> Err CmdLine
 create ais args = do
   ( cl', pargs ) <- parseArgs opti cl args
-  processPosArgs posi cl pargs
+  processPosArgs posi cl' pargs
   where
   ( opti, posi, cl ) = argInfoIndexes ais

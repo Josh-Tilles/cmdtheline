@@ -19,11 +19,11 @@ import System.IO
 
 invocation :: Char -> EvalInfo -> String
 invocation sep ei = case evalKind ei of
-  Choice -> progName ++ [sep] ++ termName
+  Choice -> progName ++ [sep] ++ choiceName
   _      -> progName
   where
-  progName = name . fst $ main ei
-  termName = name . fst $ term ei
+  progName   = termName . fst $ main ei
+  choiceName = termName . fst $ term ei
 
 title :: EvalInfo -> Title
 title ei = ( invocName, 1, "", leftFooter, centerHeader )
@@ -32,14 +32,16 @@ title ei = ( invocName, 1, "", leftFooter, centerHeader )
 
   leftFooter = prog ++ ver
     where
-    ver = maybe "" (' ':) . version . fst $ main ei
+    ver = case version . fst $ main ei of
+      ""  -> ""
+      str -> ' ' : str 
 
   centerHeader = prog ++ " Manual"
 
   prog = capitalize progName
     where
     capitalize = (:) <$> toUpper . head <*> drop 1
-    progName   = name . fst $ main ei
+    progName   = termName . fst $ main ei
 
 nameSection :: EvalInfo -> [ManBlock]
 nameSection ei =
@@ -53,9 +55,9 @@ nameSection ei =
 synopsis :: EvalInfo -> String
 synopsis ei = case evalKind ei of
   Main   -> concat [ "$(b,", invocation ' ' ei, ") $(i,COMMAND) ..." ]
-  _      -> concat [ "$(b,", invocation ' ' ei, ") [$(i,OPTION)] ...", args ]
+  _      -> concat [ "$(b,", invocation ' ' ei, ") [$(i,OPTION)]...", args ]
   where
-  args = concat . intersperse " " . reverse $ map snd args'
+  args = concat . intersperse " " $ map snd args'
     where
     args' = sortBy revCmp . formatPos [] . snd $ term ei
 
@@ -64,8 +66,8 @@ synopsis ei = case evalKind ei of
     | isOpt ai  = formatPos acc ais
     | otherwise = formatPos (( posKind ai, v'' ) : acc) ais
     where
-    v | docName ai == "" = "$(i,ARG)"
-      | otherwise     = concat [ "$(i,", docName ai, ")" ]
+    v | argName ai == "" = "$(i,ARG)"
+      | otherwise        = concat [ "$(i,", argName ai, ")" ]
 
     v' | absence ai == Absent = show v
        | otherwise            = concat [ "[", show v, "]" ]
@@ -114,11 +116,11 @@ synopsisSection ei = [ S "SYNOPSIS", P (synopsis ei) ]
 
 makeArgLabel :: ArgInfo -> String
 makeArgLabel ai
-  | isPos ai  = concat [ "$(i,", docName ai, ")" ]
-  | otherwise = concat . intersperse ", " . reverse $ map (fmtName var) names
+  | isPos ai  = concat [ "$(i,", argName ai, ")" ]
+  | otherwise = concat . intersperse ", " $ map (fmtName var) names
   where
-  var | docName ai == "" = "VAL"
-      | otherwise     = docName ai
+  var | argName ai == "" = "VAL"
+      | otherwise        = argName ai
 
   names = sort $ optNames ai
 
@@ -127,7 +129,7 @@ makeArgLabel ai
     OptKind    -> mkOptMacro
     OptVal   _ -> mkOptValMacro
     where
-    mkOptValMacro n = concat [ "$(b,", n, " [", sep, "$(i,", var, ")]" ]
+    mkOptValMacro n = concat [ "$(b,", n, ")[", sep, "$(i,", var, ")]" ]
       where
       sep | length n > 2 = "="
           | otherwise    = ""
@@ -137,35 +139,34 @@ makeArgLabel ai
       sep | length n > 2 = "="
           | otherwise    = " "
 
--- TODO: finish this type-sig.
---makeArgItems :: EvalInfo ->
-makeArgItems ei = reverse $ map format xs
+makeArgItems :: EvalInfo -> [( String, ManBlock )]
+makeArgItems ei = map format xs
   where
   xs = sortBy revCmp . filter isArgItem . snd $ term ei
 
-  isArgItem ai = not $ isPos ai && (docName ai == "" || doc ai == "")
+  isArgItem ai = not $ isPos ai && (argName ai == "" || argDoc ai == "")
 
   revCmp ai' ai
     | c /= EQ   = c
     | otherwise = compare' ai ai'
     where
-    c        = (compare `on` docTitle) ai ai'
+    c        = (compare `on` argHeading) ai ai'
     compare' = case ( isOpt ai, isOpt ai' ) of
       ( True,  True  ) -> compare `on` key . optNames
-      ( False, False ) -> compare `on` map toLower . docName
+      ( False, False ) -> compare `on` map toLower . argName
       ( True,  False ) -> const $ const LT
       ( False, True  ) -> const $ const GT
 
     key names
-      | k !! 2 == '-' = drop 2 k
+      | k !! 1 == '-' = drop 2 k
       | otherwise     = k
       where
       k = map toLower . head $ sortBy descCompare names
 
-  format ai = ( docTitle ai, I label text )
+  format ai = ( argHeading ai, I label text )
     where
     label = makeArgLabel ai ++ argvDoc
-    text  = substDocv (docName ai) (doc ai)
+    text  = substDocName (argName ai) (argDoc ai)
 
     argvDoc = case ( absent, optvOpt ) of
       ( "", "" ) -> ""
@@ -177,24 +178,24 @@ makeArgItems ei = reverse $ map format xs
     absent = case absence ai of
       Absent     -> ""
       Present "" -> ""
-      Present v  -> "absent=" ++ show v
+      Present v  -> "absent=" ++ v
 
     optvOpt = case optKind ai of
-      OptVal v -> "default=" ++ show v
+      OptVal v -> "default=" ++ v
       _        -> ""
 
-  substDocv docName doc = Man.substitute [( "docName", ("i," ++ docName) )] doc
+  substDocName argName =
+    Man.substitute (const id) [( "argName", ("$(i," ++ argName ++ ")") )]
 
--- TODO: finish this type-sig.
---makeCmdItems :: EvalInfo ->
+makeCmdItems :: EvalInfo -> [( String, ManBlock )]
 makeCmdItems ei = case evalKind ei of
   Simple -> []
   Choice -> []
   Main   -> sortBy (descCompare `on` fst) . foldl addCmd [] $ choices ei
   where
-  addCmd acc ( ti, _ ) = ( termDocs ti, I (label ti) (termDoc ti) )
+  addCmd acc ( ti, _ ) = ( termHeading ti, I (label ti) (termDoc ti) )
                        : acc
-  label ti = "$(b," ++ name ti ++ ")"
+  label ti = "$(b," ++ termName ti ++ ")"
 
 -- Orphans are marked by `Nothing`. Once the algorithm is better understood,
 -- perhaps we could move to `Either Orphan NotOrphan`.
@@ -222,7 +223,7 @@ mergeItems acc toInsert mark is blocks = case blocks of
   t         : rest -> mergeItems (Just t : acc) toInsert mark is rest
   []              -> ( marked, is )
   where
-  acc' = reverse $ toInsert ++ acc
+  acc' = toInsert ++ acc
   marked
     | mark      = Nothing : acc'
     | otherwise = acc'
@@ -230,7 +231,7 @@ mergeItems acc toInsert mark is blocks = case blocks of
   transition sec@(S str) rest = mergeItems acc'' toInsert'' mark' is' rest
     where
     ( toInsert', is' ) = partition ((== str) . fst) is
-    toInsert''         = reverse $ map snd toInsert'
+    toInsert''         = map snd toInsert'
     acc''              = Just sec : marked
     mark'              = str == "DESCRIPTION"
 
@@ -240,14 +241,14 @@ text ei = catMaybes $ mergeOrphans [] orphans revText
   cmds  = makeCmdItems ei
   args  = makeArgItems ei
   cmp   = compare `on` fst
-  items = map (second Just) . reverse . sortBy cmp . reverse $ cmds ++ args
+  items = map (second Just) . reverse . sortBy cmp $ cmds ++ args
 
   ( revText, orphans ) =
     mergeItems [Nothing] [] False items . man . fst $ term ei
 
 eiSubst ei =
-  [ ( "tname", name . fst $ term ei )
-  , ( "mname", name . fst $ main ei )
+  [ ( "tname", termName . fst $ term ei )
+  , ( "mname", termName . fst $ main ei )
   ]
 
 page :: EvalInfo -> ( Title, [ManBlock] )
@@ -259,9 +260,9 @@ print fmt h ei = Man.print (eiSubst ei) fmt h (page ei)
 prepSynopsis :: EvalInfo -> String
 prepSynopsis ei = escape $ synopsis ei
   where
-  escape = Man.mkEscape (eiSubst ei) Man.plainEsc
+  escape = Man.substitute Man.plainEsc $ eiSubst ei
 
 printVersion :: Handle -> EvalInfo -> IO ()
 printVersion h ei = case version . fst $ main ei of
-  Nothing   -> error "err: printVersion called on EvalInfo without version"
-  Just ver  -> hPutStrLn h ver
+  ""  -> error "printVersion called on EvalInfo without version"
+  str -> hPutStrLn h str

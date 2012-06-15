@@ -9,16 +9,17 @@ import System.Console.CmdTheLine.Common
 import Control.Applicative hiding ( (<|>), many, empty )
 
 import System.Cmd         ( system )
-import System.Environment ( getEnv )
-import System.Directory   ( findExecutable )
+import System.Environment ( getEnv, getProgName )
+import System.Directory   ( findExecutable, getTemporaryDirectory, removeFile )
 import System.Exit        ( ExitCode(..) )
 import System.IO.Error    ( isDoesNotExistError )
 import System.IO
 
-import Control.Exception ( handle, throw, IOException )
+import Control.Exception ( handle, throw, IOException, SomeException )
 
 import Data.Maybe ( catMaybes )
 import Data.Char  ( isSpace )
+import Data.List  ( subsequences, words )
 
 import Text.Parsec
 import Text.PrettyPrint hiding ( char )
@@ -29,23 +30,13 @@ type Subst = [( String, String )] -- An association list of
 paragraphIndent = 7
 labelIndent     = 4
 
-mkEscape :: Subst -> (Char -> String -> String) -> String -> String
-mkEscape subst esc str = sub $ sub str -- Twice for nested substitutions.
-  where
-  sub str
-    | not $ len > 1 && str !! 2 == ',' = substitute subst str
-    | len == 2                         = ""
-    | otherwise                        = esc (head str) (drop 2 str)
-    where
-    len = length str
-
 mkPrepTokens :: Bool -> String -> String
 mkPrepTokens roff = either (error . ("printTokens: "++) . show) id
-                 . parse process ""
+                  . parse process ""
   where
   process      = concat <$> many (squashSpaces <|> dash <|> otherChars) 
-  squashSpaces = spaces >> return " "
-  dash         = char '-' >> return "\\-"
+  squashSpaces = many1 Text.Parsec.space >> return " "
+  dash         = char '-' >> if roff then return "\\-" else return "-"
   otherChars   = many1 $ satisfy (\ x -> not $ isSpace x || x == '-')
 
 -- `subsitute assoc input` where `assoc` is an association list of
@@ -54,18 +45,28 @@ mkPrepTokens roff = either (error . ("printTokens: "++) . show) id
 --
 -- TODO: return `Either String String` and produce more informative errors
 -- downstream.
-substitute :: Subst -> String -> String
-substitute assoc = either (error . show) id . parse subst ""
+substitute :: (Char -> String -> String) -> Subst -> String -> String
+substitute esc assoc = either (error . show) id . parse subst ""
   where
-  subst = fmap concat . many
-        $ try (string "\\$") <|> try replace <|> pure <$> anyChar
+  subst = fmap concat scan
+
+  scan = many $ try (string "\\$") <|> try replace <|> pure <$> anyChar
 
   replace = do
     string "$("
-    replacement <- choice $ map mkReplacer assoc
+    replacement <- try escape <|> choice replacers <|> safeChars
     char ')'
     return replacement
 
+  escape = do
+    c <- anyChar
+    char ','
+    str <- try replace <|> safeChars
+    return $ esc c str
+
+  safeChars = many1 $ satisfy (/= ')')
+
+  replacers = map mkReplacer assoc
   mkReplacer ( replacing, replacement ) = replacement <$ string replacing
 
 
@@ -77,14 +78,13 @@ plainEsc :: Char -> String -> String
 plainEsc 'g' _   = ""
 plainEsc _   str = str
 
-indent :: Int -> String
-indent n = take n $ repeat ' '
-
 prepPlainBlocks :: Subst -> [ManBlock] -> String
 prepPlainBlocks subst = show . go empty
   where
-  escape     = mkEscape subst plainEsc
+  escape     = substitute plainEsc subst
   prepTokens = mkPrepTokens False . escape
+
+  pFill = fsep . map text . words
 
   go :: Doc -> [ManBlock] -> Doc
   go acc []             = acc
@@ -92,23 +92,28 @@ prepPlainBlocks subst = show . go empty
     where
     acc' = case block of
       NoBlank     -> acc
-      P str       -> acc $+$ nest paragraphIndent (text $ prepTokens str)
+      P str       -> acc $+$ nest paragraphIndent (pFill $ prepTokens str)
+                         $+$ text ""
       S str       -> acc $+$ text (prepTokens str)
       I label str -> prepLabel label str
 
     prepLabel label str =
-      acc $+$ nest paragraphIndent (text $ prepTokens label') $+$ content
+      acc $+$ nest paragraphIndent (text $ prepTokens label')
+       `juxt` content
+          $+$ text ""
       where
+      juxt -- juxtapose
+        | ll < labelIndent = (<+>)
+        | otherwise        = ($$)
+
       content
         | str == ""        = empty
-        | ll < labelIndent = doc
-        | otherwise        = text "" $+$ doc
+        | ll < labelIndent = doc (labelIndent - ll)
+        | otherwise        = doc (paragraphIndent + labelIndent)
 
-      doc = nest (labelIndent - ll) (text $ prepTokens str)
-
+      doc n  = nest n (pFill $ prepTokens str)
       label' = escape label
-
-      ll = length label'
+      ll     = length label'
 
 printPlainPage :: Subst -> Handle -> Page -> IO ()
 printPlainPage subst h ( _, blocks ) =
@@ -129,7 +134,7 @@ groffEsc c str = case c of
 prepGroffBlocks :: Subst -> [ManBlock] -> String
 prepGroffBlocks subst blocks = prep =<< blocks
   where
-  escape     = mkEscape subst groffEsc
+  escape     = substitute groffEsc subst
   prepTokens = mkPrepTokens True . escape
   prep block = case block of
     P str       -> "\n.P\n" ++ prepTokens str
@@ -138,15 +143,14 @@ prepGroffBlocks subst blocks = prep =<< blocks
     NoBlank     -> "\n.sp -1"
 
 printGroffPage :: Subst -> Handle -> Page -> IO ()
-printGroffPage subst h page = hPutStrLn h $ unlines
+printGroffPage subst h page = hPutStr h $ unlines
   [ ".\\\" Pipe this output to groff -man -Tutf8 | less"
   , ".\\\""
   , concat [ ".TH \"", n, "\" ", show s
            , " \"", a1, "\" \"", a2, "\" \"", a3, "\"" ]
   , ".\\\" Disable hyphenation and ragged-right"
   , ".nh"
-  , ".ad l"
-  , prepGroffBlocks subst blocks
+  , ".ad l" ++ prepGroffBlocks subst blocks
   ]
   where
   ( ( n, s, a1, a2, a3 ), blocks ) = page
@@ -155,6 +159,24 @@ printGroffPage subst h page = hPutStrLn h $ unlines
 --
 -- Pager output
 --
+
+printToTempFile :: (Handle -> Page -> IO ()) -> Page
+                -> IO (Maybe String)
+printToTempFile print v = handle handler $ do
+  progName <- getProgName
+  tempDir  <- getTemporaryDirectory
+
+  let fileName = tempDir ++ "/" ++ progName ++ ".out"
+
+  h        <- openFile fileName ReadWriteMode
+
+  print h v
+  hFlush h
+
+  return $ Just fileName
+  where
+  handler :: SomeException -> IO (Maybe String)
+  handler = const $ return Nothing
 
 printToPager :: (HFormat -> Handle -> Page -> IO ()) -> Handle -> Page -> IO ()
 printToPager print h page = do
@@ -178,19 +200,21 @@ printToPager print h page = do
                   $ printToTempFile (print Groff) page
 
       case mCmd of
-        Nothing  -> print Plain h page
-        Just cmd -> do exitStatus <- system cmd
-                       case exitStatus of
-                            ExitSuccess   -> return ()
-                            ExitFailure _ -> print Plain h page
+        Nothing               -> print Plain h page
+        Just ( cmd, tmpFile ) -> do
+          exitStatus <- system cmd
+          case exitStatus of
+            ExitSuccess   -> return ()
+            ExitFailure _ -> print Plain h page
+          removeFile tmpFile
   where
-  preped roff pager tmpFile =
-    concat [ xroff, " -man < ", tmpFile, " | ", pager ]
+  preped roff pager tmpFile = ( cmd, tmpFile )
     where
-    xroff | roff == "groff" = roff ++ " -Tascee"
-          | otherwise       = roff
+    cmd = concat [ roff, " -man -Tutf8 < ", tmpFile, " | ", pager ]
 
-  naked pager tmpFile = pager ++ " < " ++ tmpFile
+  naked pager tmpFile = ( cmd, tmpFile )
+    where
+    cmd = pager ++ " < " ++ tmpFile
 
   handler :: IOException -> IO [String]
   handler e

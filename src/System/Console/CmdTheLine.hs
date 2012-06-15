@@ -7,9 +7,12 @@ module System.Console.CmdTheLine
   , module System.Console.CmdTheLine.Arg
   , ManBlock(..)
   , TermInfo(..)
+  , Term()
+  , ArgInfo( argDoc, argName, argHeading )
+  , Fail(..), Err, HFormat(..)
   )
   where
 
-import System.Console.CmdTheLine.Common ( ManBlock(..), TermInfo(..) )
+import System.Console.CmdTheLine.Common
 import System.Console.CmdTheLine.Term
 import System.Console.CmdTheLine.Arg

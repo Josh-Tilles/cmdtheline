@@ -1,4 +1,4 @@
-clean up optional arguments
+--help and --version in documentation
 formalize tests
 comments
 haddock

@@ -4,14 +4,9 @@
  -}
 module System.Console.CmdTheLine.Common where
 
-import Prelude
-import Text.PrettyPrint
-import Control.Exception
-import System.IO
-import Data.Function
-import System.Environment
-import System.Directory
 import Data.Unique
+import Data.Function    ( on )
+import Text.PrettyPrint ( Doc )
 
 import qualified Data.Map as M
 
@@ -19,29 +14,33 @@ data HFormat = Pager | Plain | Groff
 
 data Absence = Absent
              | Present String
-               deriving ( Eq )
+               deriving ( Eq, Show )
 
 data OptKind = FlagKind
              | OptKind
              | OptVal String
-               deriving ( Eq )
+               deriving ( Eq, Show )
 
 data PosKind = PosAny
              | PosN Bool Int
              | PosL Bool Int
              | PosR Bool Int
+               deriving ( Show )
+
+instance Show Unique where
+  show = show . hashUnique
 
 data ArgInfo = ArgInfo
   { ident      :: Unique
   , absence    :: Absence
-  , doc        :: String
-  , docName    :: String
-  , docTitle   :: String
+  , argDoc     :: String
+  , argName    :: String
+  , argHeading :: String
   , posKind    :: PosKind
   , optKind    :: OptKind
   , optNames   :: [String]
   , repeatable :: Bool
-  }
+  } deriving ( Show )
 
 instance Eq ArgInfo where
   (==) = (==) `on` ident
@@ -51,6 +50,7 @@ instance Ord ArgInfo where
 
 data Arg = Opt [( Int, String, Maybe String )]
          | Pos [String]
+           deriving ( Show )
 
 type CmdLine = M.Map ArgInfo Arg
 
@@ -62,20 +62,20 @@ data ManBlock = S String
               | P String
               | I String String
               | NoBlank
-                deriving ( Eq )
+                deriving ( Eq, Show )
 
 type Title = ( String, Int, String, String, String )
 
 type Page = ( Title, [ManBlock] )
 
 data TermInfo = TermInfo
-  { name     :: String
-  , version  :: Maybe String
-  , termDoc  :: String
-  , termDocs :: String
-  , sDocs    :: String
-  , man      :: [ManBlock]
-  } deriving ( Eq )
+  { termName      :: String
+  , termDoc       :: String
+  , termHeading   :: String
+  , stdOptHeading :: String
+  , version       :: String
+  , man           :: [ManBlock]
+  } deriving ( Eq, Show )
 
 type Command = ( TermInfo, [ArgInfo] )
 
@@ -91,6 +91,7 @@ data EvalKind = Simple
 
 data Fail = MsgFail   Doc
           | UsageFail Doc
+          | HelpFail  HFormat (Maybe String)
 
 type Err = Either Fail
 
@@ -106,21 +107,3 @@ evalKind ei
 
 descCompare :: Ord a => a -> a -> Ordering
 descCompare = flip compare
-
-printToTempFile :: (Handle -> Page -> IO ()) -> Page
-                -> IO (Maybe String)
-printToTempFile print v = handle handler $ do
-  progName <- getProgName
-  tempDir  <- getTemporaryDirectory
-
-  let fileName = tempDir ++ "/" ++ progName ++ ".out"
-
-  h        <- openFile fileName ReadWriteMode
-
-  print h v
-  hFlush h
-
-  return $ Just fileName
-  where
-  handler :: SomeException -> IO (Maybe String)
-  handler = const $ return Nothing

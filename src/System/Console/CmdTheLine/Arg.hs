@@ -4,16 +4,25 @@
  -}
 {-# LANGUAGE FlexibleInstances #-}
 module System.Console.CmdTheLine.Arg
-  ( ArgVal(..), ArgParser, ArgPrinter
+  (
+  -- * Parsing values from the command-line
+    ArgVal(..), ArgParser, ArgPrinter
   , fromParsec, just, maybePP, enum
 
-  , info
+  -- * Creating ArgInfos
+  , optInfo, posInfo
 
+  -- * Flag options
   , flag, flagAll, vFlag, vFlagAll
+
+  -- * Assignable options
   , opt, defaultOpt, optAll, defaultOptAll
+
+  -- * Positionals
   , pos, revPos, posAny, posLeft, posRight, revPosLeft, revPosRight
 
-  , absent, required, nonEmpty, lastOf
+  -- * Constraining Terms
+  , required, nonEmpty, lastOf
   ) where
 
 import System.Console.CmdTheLine.Common
@@ -36,8 +45,28 @@ import System.IO.Unsafe
 argFail :: Doc -> Err a
 argFail = Left . MsgFail
 
-info :: [String] -> ArgInfo
-info names = ArgInfo
+-- | Initialize an 'ArgInfo' by providing a list of names.  The fields 'argDoc'
+-- 'argName' and 'argHeading' can then be manipulated post-mortem, as in
+--
+-- > inf =(optInfo    [ "i", "insufflation" ])
+-- >     { argName    = "INSUFFERABLE"
+-- >     , argDoc     = "in the haunted house's harrow"
+-- >     , argHeading = "NOT FOR AUGHT"
+-- >     }
+--
+-- Names of one character in length will be prefixed by @-@ on the
+-- command-line, while longer names will be prefixed by @--@.
+--
+-- This function is meant to be used with optional arguments produced by 'flag',
+-- 'opt', and friends-- not with positional arguments.  Positional arguments
+-- provided with names will yield a run-time error, halting any and all program
+-- runs.  Use 'posInfo' for positional arguments.
+--
+-- Likewise, if an optional argument is created with an 'ArgInfo' produced by
+-- passing an empty list of names to 'optInfo', a run-time error will occur.
+-- All optional arguments must have names.
+optInfo :: [String] -> ArgInfo
+optInfo names = ArgInfo
   { ident      = unsafePerformIO newUnique
   , absence    = Present ""
   , argDoc     = ""
@@ -57,8 +86,19 @@ info names = ArgInfo
                ++ "recieved empty string as name"
   dash str@[_] = "-"  ++ str
   dash str     = "--" ++ str
-{-# NOINLINE info #-}
+{-# NOINLINE optInfo #-}
 
+-- | As 'optInfo' but for positional arguments, which by virtue of their
+-- positions require no names.  If a positional argument is created with a
+-- name, a run-time error will occur halting any and all program runs.
+--
+-- If you mean to create an optional argument, use 'optInfo', and be sure to
+-- give it a non-empty list of names to avoid these errors.
+posInfo :: ArgInfo
+posInfo = optInfo []
+
+-- | Create a command-line flag that can appear at most once on the
+-- command-line.  Yields @False@ in absence and @True@ in presence.
 flag :: ArgInfo -> Term Bool
 flag ai =
   if isPos ai
@@ -74,6 +114,8 @@ flag ai =
      ( _, g, _ ) :
      _           ) -> argFail $ E.optRepeated (text f) (text g)
 
+-- | As 'flag' but may appear an infinity of times. Yields a list of @True@s
+-- as long as the number of times present.
 flagAll :: ArgInfo -> Term [Bool]
 flagAll ai
   | isPos ai  = error E.errNotPos
@@ -89,6 +131,9 @@ flagAll ai
     Nothing -> Right   True
     Just v  -> argFail $ E.flagValue (text f) (text v)
 
+-- | 'vFlag' @v [ ( v1, ai1 ), ... ]@ is an argument that can be present at most
+-- once on the command line. It takes on the value @vn@ when appearing as
+-- @ain@.
 vFlag :: a -> [( a, ArgInfo )] -> Term a
 vFlag v assoc = Term (map flag assoc) yield
   where
@@ -115,6 +160,9 @@ vFlag v assoc = Term (map flag assoc) yield
        ( _, g, _ ) :
        _           ) -> argFail $ E.optRepeated (text g) (text f)
 
+-- | 'vFlagAll' @vs assoc@ is as 'vFlag' except that it can be present an
+-- infinity of times.  In absence, @vs@ is yielded.  When present, each
+-- appearance is collected in-order in the result.
 vFlagAll :: Ord a => [a] -> [( a, ArgInfo)] -> Term [a]
 vFlagAll vs assoc = Term (map flag assoc) yield
   where
@@ -170,9 +218,14 @@ mkOpt vopt v ai
        ( _, g, _ ) :
        _           ) -> argFail $ E.optRepeated (text g) (text f)
 
+-- | 'opt' @v ai@ is an optional argument that yields @v@ in absence, or an
+-- assigned value in presence.  If the option is present, but no value is
+-- assigned, it is considered a user-error and usage is printed on exit.
 opt :: ArgVal a => a -> ArgInfo -> Term a
 opt = mkOpt Nothing
 
+-- | 'defaultOpt' @def v ai@ is as 'opt' except if it is present and no value is
+-- assigned on the command-line, @def@ is the result.
 defaultOpt :: ArgVal a => a -> a -> ArgInfo -> Term a
 defaultOpt x = mkOpt $ Just x
 
@@ -198,9 +251,15 @@ mkOptAll vopt vs ai
         Nothing -> argFail $ E.optValueMissing (text f)
         Just dv -> Right   ( pos, dv )
 
+-- | 'optAll' @vs ai@ is like 'opt' except that it yields a list of results in
+-- absence and can appear an infinity of times.  The values it is assigned on
+-- the command-line are accumulated in the order they appear result.
 optAll :: ( ArgVal a, Ord a ) => [a] -> ArgInfo -> Term [a]
 optAll = mkOptAll Nothing
 
+-- | 'defaultOptAll' @def vs ai@ is like 'optAll' except that if it is present
+-- without being assigned a value, the value @def@ takes its place in the list
+-- of results
 defaultOptAll :: ( ArgVal a, Ord a ) => a -> [a] -> ArgInfo -> Term [a]
 defaultOptAll x = mkOptAll $ Just x
 
@@ -225,8 +284,14 @@ mkPos rev pos v ai = Term [ai] yield
     [v] -> parsePosValue ai' v
     _   -> error "saw list with more than one member in pos converter"
 
-pos, revPos :: ArgVal a => Int -> a -> ArgInfo -> Term a
+-- | 'pos' @n v ai@ is an argument defined by the @n@th positional argument
+-- on the command-line. If absent the value @v@ is returned.
+pos :: ArgVal a => Int -> a -> ArgInfo -> Term a
 pos    = mkPos False
+
+-- | 'revPos' @n v ai@ is as 'pos' but counting from the end of the command-line
+-- to the front.
+revPos :: ArgVal a => Int -> a -> ArgInfo -> Term a
 revPos = mkPos True
 
 posList :: ArgVal a => PosKind -> [a] -> ArgInfo -> Term [a]
@@ -239,15 +304,29 @@ posList kind vs ai
       [] -> Right vs
       xs -> mapM (parsePosValue ai') xs
 
+-- | 'posAny' @vs ai@ yields a list of all positional arguments or @vs@ if none
+-- are present.
 posAny :: ArgVal a => [a] -> ArgInfo -> Term [a]
 posAny = posList PosAny
 
-posLeft, posRight, revPosLeft, revPosRight
-  :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
-
+-- | 'posLeft' @n vs ai@ yield a list of all positional arguments to the left of
+-- the @n@th positional argument or @vs@ if there are none.
+posLeft :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
 posLeft     = posList . PosL False
+
+-- | 'posRight' @n vs ai@ is as 'posLeft' except yielding all values to the right
+-- of the @n@th positional argument.
+posRight :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
 posRight    = posList . PosR False
+
+-- | 'revPosLeft' @n vs ai@ is as 'posLeft' except @n@ counts from the end of the
+-- command line to the front.
+revPosLeft :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
 revPosLeft  = posList . PosL True
+
+-- | 'revPosRight' @n vs ai@ is as 'posRight' except @n@ counts from the end of
+-- the command line to the front.
+revPosRight :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
 revPosRight = posList . PosR True
 
 
@@ -257,6 +336,12 @@ revPosRight = posList . PosR True
 
 absent = map (\ a -> a { absence = Absent })
 
+-- | @required term@ is a term that fails in the 'Nothing' and yields @a@ in
+-- the 'Just'.
+--
+-- This is intended for required positional arguments.  There is nothing
+-- stopping you from using it with optional arguments except hopefully your
+-- sanity.
 required :: Term (Maybe a) -> Term a
 required (Term ais yield) = Term ais' yield'
   where
@@ -265,6 +350,8 @@ required (Term ais yield) = Term ais' yield'
     Left  e  -> Left  e
     Right mv -> maybe (argFail . E.argMissing $ head ais') Right mv
 
+-- | @nonEmpty term@ is a term that fails if its result is empty. intended
+-- for non-empty lists of positional arguments.
 nonEmpty :: Term [a] -> Term [a]
 nonEmpty (Term ais yield) = Term ais' yield'
   where
@@ -274,6 +361,9 @@ nonEmpty (Term ais yield) = Term ais' yield'
     Right [] -> argFail . E.argMissing $ head ais'
     Right xs -> Right   xs
 
+-- | @lastOf term@ isa term that fails if its result is empty and evaluates
+-- to the last element of the resulting list otherwise.  Intended for lists
+-- of flags or options where the last takes precedence.
 lastOf :: Term [a] -> Term a
 lastOf (Term ais yield) = Term ais yield'
   where
@@ -287,7 +377,11 @@ lastOf (Term ais yield) = Term ais yield'
 -- ArgVal
 --
 
+
+-- | The type of parsers of individual command-line argument values.
 type ArgParser  a = String -> Either Doc a
+
+-- | The type of printers of values retrieved from the command-line.
 type ArgPrinter a = a -> Doc
 
 decPoint      = string "."
@@ -299,16 +393,26 @@ pFloating :: ( Read a, Floating a ) => Parsec String () a
 pInteger      = read <$> digits
 pFloating     = read <$> concatParsers [ digits, decPoint, digits ]
 
+-- | 'fromParsec' @onErr p@ makes an 'ArgParser' from @p@ using @onErr@ to
+-- produce meaningful error messages.  On failure, @onErr@ will receive a
+-- raw string of the value found on the command-line.
 fromParsec :: ( String -> Doc) -> Parsec String () a -> ArgParser a
 fromParsec onErr p str = either (const . Left $ onErr str) Right
                        $ parse p "" str
 
+-- | A parser of 'Maybe' values of 'ArgVal' instance's. A convenient default
+-- that merely lifts the 'ArgVal' instance's parsed value with 'Just'.
 just :: ArgVal a => ArgParser (Maybe a)
 just = either Left (Right . Just) . parser
 
+-- | A printer of 'Maybe' values of 'ArgVal'. A convenient default that prints
+-- nothing on the 'Nothing' and just the value on the 'Just'.
 maybePP :: ArgVal a => ArgPrinter (Maybe a)
 maybePP = maybe empty id . fmap pp
 
+-- | A parser of enumerated values conveyed as an association list of
+-- @( string, value )@ pairs.  Unambiguous prefixes of @string@ map to
+-- @value@.
 enum :: [( String, a )] -> ArgParser a
 enum assoc str = case T.lookup str trie of
   Right v           -> Right v
@@ -321,6 +425,8 @@ enum assoc str = case T.lookup str trie of
 
 invalidVal = E.invalidVal `on` text
 
+-- | The class of values that can be parsed from the command line. Instances
+-- must provide both methods.
 class ArgVal a where
   parser  :: ArgParser a
   pp      :: ArgPrinter a

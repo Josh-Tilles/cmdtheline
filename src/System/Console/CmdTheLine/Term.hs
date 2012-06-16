@@ -3,15 +3,20 @@
  - See the file 'LICENSE' for further information.
  -}
 module System.Console.CmdTheLine.Term
-  ( Default(..)
-  , ret
+  (
+  -- * User error reporting
+    ret
+
+  -- * Simple command-line programs
   , eval, exec, run
+
+  -- * Command-based command-line programs
   , evalChoice, execChoice, runChoice
   ) where
 
 import System.Console.CmdTheLine.Common
 import System.Console.CmdTheLine.CmdLine
-import qualified System.Console.CmdTheLine.Arg     as A
+import System.Console.CmdTheLine.Arg
 import qualified System.Console.CmdTheLine.Err     as E
 import qualified System.Console.CmdTheLine.Help    as H
 import qualified System.Console.CmdTheLine.Trie    as T
@@ -22,7 +27,6 @@ import Control.Monad       ( join )
 
 import Data.List    ( find, sort )
 import Data.Maybe   ( fromJust )
-import Data.Default
 
 import System.Environment ( getArgs )
 import System.Exit        ( exitFailure )
@@ -31,15 +35,13 @@ import System.IO
 import Text.PrettyPrint
 import Text.Parsec
 
-import Debug.Trace
-
 
 --
 -- EvalErr
 --
 
 
-data EvalFail = Help  HFormat 
+data EvalFail = Help  HelpFormat 
                       (Maybe String) -- The name of the command being run
               | Usage Doc
               | Msg   Doc
@@ -98,22 +100,22 @@ instance Applicative Term where
 -- Standard Options
 --
 
-instance A.ArgVal HFormat where
-  parser = A.enum [ ( "pager", Pager )
-                  , ( "plain", Plain )
-                  , ( "groff", Groff )
-                  ]
+instance ArgVal HelpFormat where
+  parser = enum [ ( "pager", Pager )
+                , ( "plain", Plain )
+                , ( "groff", Groff )
+                ]
 
   pp Pager = text "pager"
   pp Plain = text "plain"
   pp Groff = text "groff"
 
-instance A.ArgVal (Maybe HFormat) where
-  parser = A.just
+instance ArgVal (Maybe HelpFormat) where
+  parser = just
 
-  pp = A.maybePP
+  pp = maybePP
 
-addStdOpts :: EvalInfo -> ( Yield (Maybe HFormat)
+addStdOpts :: EvalInfo -> ( Yield (Maybe HelpFormat)
                           , Maybe (Yield Bool)
                           , EvalInfo
                           )
@@ -123,23 +125,27 @@ addStdOpts ei = ( hLookup, vLookup, ei' )
     "" -> ( [],  Nothing )
     _  -> ( ais, Just lookup )
     where
-    Term ais lookup = A.flag $ (A.info     ["version"])
+    Term ais lookup = flag (optInfo ["version"])
                     { argHeading = heading
                     , argDoc     = "Show version information."
                     }
 
-  ( args', hLookup ) = ( reverse $ ais ++ args, lookup )
+  ( args', hLookup ) = ( ais ++ args, lookup )
     where
-    Term ais lookup = A.defaultOpt (Just Pager) Nothing $ (A.info     ["help"])
+    Term ais lookup = defaultOpt (Just Pager) Nothing (optInfo ["help"])
                     { argHeading = heading
                     , argName    = "FMT"
                     , argDoc     = doc
                     }
 
-  heading = stdOptHeading . fst $ term ei
+  heading = stdOptHeading . fst $ term ei'
   doc     = "Show this help in format $(argName) (pager, plain, or groff)."
 
-  ei' = ei { term = second (reverse . (args' ++)) (term ei) }
+  addArgs = second (args' ++)
+  ei' = ei { term = addArgs $ term ei
+           , main = addArgs $ main ei
+           , choices = map addArgs $ choices ei
+           }
 {-
   ais' = zipWith (\ ai n -> ai { ident = n }) ais [1..]
     where
@@ -162,7 +168,7 @@ evalTerm ei yield args = either handleErr return $ do
   let success = fromErr $ yield ei' cl
 
   case ( mResult, versionArg ) of
-    ( Just fmt, _         ) -> Left    $ Help fmt mName
+    ( Just fmt, _         ) -> Left $ Help fmt mName
     ( Nothing,  Just vArg ) -> case vArg ei' cl of
                                     Left  e     -> fromFail e
                                     Right True  -> Left Version
@@ -193,8 +199,7 @@ chooseTerm ti choices args@( arg : rest )
     Left  T.Ambiguous -> Left . UsageFail $ E.ambiguous com arg ambs
     where
     index = foldl add T.empty choices
-      where
-      add acc ( choice, _ ) = T.add acc (termName choice) choice
+    add acc ( choice, _ ) = T.add acc (termName choice) choice
 
     com  = "command"
     ambs = sort $ T.ambiguities index arg
@@ -204,30 +209,28 @@ mkCommand ( Term ais _, ti ) = ( ti, ais )
  
 -- Prep an EvalInfo suitable for catching errors raised by `chooseTerm`.
 chooseTermEi :: ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> EvalInfo
-chooseTermEi mainTerm choices = ei'
+chooseTermEi mainTerm choices = ei
   where
-  ei'       = ei { term = second (const ais') (term ei)
-                 , main = second (const ais') (term ei)
-                 }
   ei        = EvalInfo command command eiChoices
   eiChoices = map mkCommand choices
   command   = mkCommand mainTerm
-
-  ais         = snd $ term ei
-  ais'        = ais ++ hAis ++ vAis
-  Term vAis _ = versionTerm ei
-  Term hAis _ = help        ei
 
 
 --
 -- User-Facing Functionality
 --
 
+-- | 'ret' @term@ folds @term@'s 'Err' context into the library to be handled
+-- internally and seamlesly as other error messages that are built in.
 ret :: Term (Err a) -> Term a
 ret (Term ais yield) = Term ais yield'
   where
   yield' ei cl = join $ yield ei cl
 
+-- | 'eval' @args ( term, termInfo )@ allows the user to pass @args@ directly to
+-- the evaluation mechanism.  This is usefull if some kind of pre-processing is
+-- required.  If you do not need to pre-process command-line arguments, use one
+-- of 'exec' or 'run'.  On failure the program exits.
 eval :: [String] -> ( Term a, TermInfo ) -> IO a
 eval args ( term, termInfo ) = evalTerm ei yield args
   where
@@ -235,16 +238,24 @@ eval args ( term, termInfo ) = evalTerm ei yield args
   ei               = EvalInfo command command []
   command          = ( termInfo, ais )
 
+-- | 'exec' @( term, termInfo )@ executes a command-line program, directly
+-- grabing the command-line arguments and returning the result upon succesfull
+-- evaluation of @term@.  On failure the program exits.
 exec :: ( Term a, TermInfo ) -> IO a
 exec term = do
   args <- getArgs
   eval args term
 
+-- | 'run' @( term, termInfo )@ runs a @term@ containing an 'IO' action,
+-- performs the action, and returns the result on success. On failure the
+-- program exits.
 run :: ( Term (IO a), TermInfo ) -> IO a
 run term = do
   action <- exec term
   action
 
+-- | 'evalChoice' @args mainTerm choices@ is analagous to 'eval', but for
+-- programs that provide a choice of commands.
 evalChoice :: [String] -> ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a
 evalChoice args mainTerm@( term, termInfo ) choices = do
   ( ei, yield, args' ) <- either handleErr return $ do
@@ -268,22 +279,14 @@ evalChoice args mainTerm@( term, termInfo ) choices = do
   handleErr e = do printEvalErr (chooseTermEi mainTerm choices) e
                    exitFailure
 
+-- | Analagous to 'exec', but for programs that provide a choice of commands.
 execChoice :: ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a
 execChoice main choices = do
   args <- getArgs
   evalChoice args main choices
 
+-- | Analagous to 'run', but for programs that provide a choice of commands.
 runChoice :: ( Term (IO a), TermInfo ) -> [( Term (IO a), TermInfo )] -> IO a
 runChoice main choices = do
   action <- execChoice main choices
   action
-
-instance Default TermInfo where
-  def = TermInfo
-    { termName      = "???"
-    , version       = ""
-    , termDoc       = ""
-    , termHeading   = "COMMANDS"
-    , stdOptHeading = "OPTIONS"
-    , man           = []
-    }

@@ -1,0 +1,217 @@
+import System.Console.CmdTheLine
+import Control.Applicative
+import Data.Default
+
+import Data.Char ( isUpper, isAlpha, isAlphaNum, isSpace
+                 , toLower
+                 )
+import Data.List ( intersperse )
+
+import System.IO
+import System.Exit
+
+infixr 2 <||>
+-- Split a value between predicates and 'or' the results together
+(<||>) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
+p <||> p' = (||) <$> p <*> p'
+
+
+--
+-- Rot
+--
+
+data Cycle a = Cycle
+  { backward :: (Cycle a)
+  , at       :: a
+  , forward  :: (Cycle a)
+  }
+
+fromList :: [a] -> Cycle a
+fromList [] = error "Cycle must have at least one element"
+fromList xs = first
+  where
+  ( first, last ) = go last xs first
+
+  go :: Cycle a -> [a] -> Cycle a -> ( Cycle a, Cycle a )
+  go prev []       next = ( next, prev )
+  go prev (x : xs) next = ( this, last )
+    where
+    this        = Cycle prev x rest
+    (rest,last) = go this xs next
+
+-- Return a Cycle centered on x.
+seekTo :: Eq a => a -> Cycle a -> Cycle a
+seekTo x xs
+  | x == at xs = xs
+  | otherwise  = seekTo x $ forward xs
+ 
+-- Seek n places forwards or backwards.
+seek :: Bool -> Int -> Cycle a -> Cycle a
+seek _    0 xs = xs
+seek back n xs = seek back (n - 1) (dir xs)
+  where
+  dir = if back then backward else forward
+
+lowers = fromList ['a'..'z']
+uppers = fromList ['A'..'Z']
+
+rot :: Bool -> Int -> Maybe String -> IO ()
+rot back n mStr = do
+  input <- case mStr of
+    Nothing  -> getContents
+    Just str -> return str
+
+  putStrLn $ map rotChar input
+  where
+  rotChar c = if isAlpha c then c' else c
+    where
+    c' = at . seek back n $ seekTo c cycle
+    cycle
+      | not $ isAlpha c = error "attempt to rotate character outside Latin alphabet"
+      | isUpper c       = uppers
+      | otherwise       = lowers
+
+
+--
+-- Morse
+--
+
+code =
+  [ ( 'a', ".-"    ), ( 'b', "-..."  ), ( 'c', "-.-."  ), ( 'd', "-.."   )
+  , ( 'e', "."     ), ( 'f', "..-."  ), ( 'g', "--."   ), ( 'h', "...."  )
+  , ( 'i', ".."    ), ( 'j', ".---"  ), ( 'k', "-.-"   ), ( 'l', ".-.."  )
+  , ( 'm', "--"    ), ( 'n', "-."    ), ( 'o', "---"   ), ( 'p', ".--."  )
+  , ( 'q', "--.-"  ), ( 'r', ".-."   ), ( 's', "..."   ), ( 't', "-"     )
+  , ( 'u', "..-"   ), ( 'v', "...-"  ), ( 'w', ".--"   ), ( 'x', "-..-"  )
+  , ( 'y', "-.--"  ), ( 'z', "--.."  ), ( '1', ".----" ), ( '2', "..---" )
+  , ( '3', "...--" ), ( '4', "....-" ), ( '5', "....." ), ( '6', "-...." )
+  , ( '7', "--..." ), ( '8', "---.." ), ( '9', "----." ), ( '0', "-----" )
+  , ( ' ', "/"     )
+  ]
+
+switch ( x, y ) = ( y, x )
+
+morse :: Bool -> Maybe String -> IO ()
+morse from mStr = do
+  input <- case mStr of
+    Nothing  -> getContents
+    Just str -> return str
+
+  if all pred input
+     then return ()
+     else do hPutStrLn stderr errStr
+             exitFailure
+
+  convert input
+  where
+  pred = if from then (== '/') <||> (== '-') <||> (== '.') <||> isSpace
+                 else isAlphaNum <||> isSpace
+
+  errStr = if from
+    then "err: morse input must be all spaces, '/'s, '-'s, and '.'s."
+    else "err: morse input must be alphanumeric and/or spaces"
+
+  convert str = maybe badConvert putStrLn . convert' . words $ map toLower str
+    where
+    badConvert = hPutStrLn stderr err >> exitFailure
+      where
+      err = if from then "could not convert from morse"
+                    else "could not convert to morse"
+
+    convert' = if from then fromMorse else toMorse
+
+  fromMorse    = mapM (`lookup` map switch code)
+  toMorse strs = sepJoin " / " <$> mapM convertLetters strs
+    where
+    convertLetters chars = sepJoin " " <$> mapM (`lookup` code) chars
+
+    sepJoin sep = concat . intersperse sep
+
+
+--
+-- Terms
+--
+
+commonHeading = "COMMON OPTIONS"
+helpSection =
+  [ S commonHeading
+  , P "These options are common to all commands."
+  , S "MORE HELP"
+  , P "Use '$(mname) $(i,COMMAND) --help' for help on a single command."
+  , S "BUGS"
+  , P "Email bug reports to <eli.lee.frey@gmail.com>"
+  ]
+
+input = opt Nothing (optInfo       [ "input", "i" ])
+      { argName    = "INPUT"
+      , argDoc     = "For specifying input on the command-line.  If present, "
+                  ++ "input is not read form standard-in."
+      , argHeading = commonHeading
+      }
+
+rotTerm = ( rot <$> back <*> n <*> input, termInfo )
+  where
+  back = flag (optInfo [ "back", "b" ])
+       { argName = "BACK"
+       , argDoc  = "Rotate backwards instead of forwards."
+       }
+
+  n    = opt 13 (optInfo [ "n" ])
+       { argName = "N"
+       , argDoc  = "How many places to rotate by."
+       }
+
+  termInfo = def
+    { termName = "rot"
+    , termDoc  = "Rotate the input characters by N."
+    , man      = [ S "DESCRIPTION"
+                 , P $ "Rotate input gathered from INPUT or standard-in N "
+                    ++ "places.  The input must be composed totally of "
+                    ++ "alphabetic characters and spaces."
+                 ] ++ helpSection
+    , stdOptHeading = commonHeading
+    }
+
+
+morseTerm = ( morse <$> from <*> input, termInfo )
+  where
+  from = flag $ (optInfo [ "from", "f" ])
+       { argName   = "FROM"
+       , argDoc    = "Convert from morse-code to the Latin alphabet. "
+                  ++ "If absent, convert from Latin alphabet to morse-code."
+       }
+
+  termInfo = def
+    { termName = "morse"
+    , termDoc  = "Convert to and from morse-code."
+    , man      = [ S "DESCRIPTION"
+                 , P desc
+                 ] ++ helpSection
+    , stdOptHeading = commonHeading
+    }
+
+  desc = concat
+    [ "Converts input gathered from INPUT or standard-in to and from morse "
+    , "code. 'dah' is converted to '-', 'dit' to '.'.  Each character is "
+    , "seperated from the next by one or more ' '.  Words are seperated "
+    , "by a '/'."
+    ]
+
+
+defaultTerm = ( ret $ const (Left $ HelpFail Pager Nothing) <$> input
+              , termInfo
+              )
+  where
+  termInfo = def
+    { termName      = "cipher"
+    , version       = "v1.0"
+    , termDoc       = doc
+    , stdOptHeading = commonHeading
+    , man           = helpSection
+    }
+
+  doc = "An implementation of the morse-code and rotational(ceaser) ciphers."
+
+choices = [ rotTerm, morseTerm ]
+
+main = runChoice defaultTerm [ rotTerm, morseTerm ]

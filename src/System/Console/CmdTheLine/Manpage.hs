@@ -178,7 +178,8 @@ printToTempFile print v = handle handler $ do
   handler :: SomeException -> IO (Maybe String)
   handler = const $ return Nothing
 
-printToPager :: (HFormat -> Handle -> Page -> IO ()) -> Handle -> Page -> IO ()
+printToPager :: (HelpFormat -> Handle -> Page -> IO ())
+             -> Handle -> Page -> IO ()
 printToPager print h page = do
   pagers <- do
     name <- handle handler $ pure <$> getEnv "PAGER"
@@ -226,7 +227,7 @@ printToPager print h page = do
 -- Interface
 --
 
-print :: Subst -> HFormat -> Handle -> Page -> IO ()
+print :: Subst -> HelpFormat -> Handle -> Page -> IO ()
 print subst fmt = case fmt of
   Pager -> printToPager   (System.Console.CmdTheLine.Manpage.print subst)
   Plain -> printPlainPage subst

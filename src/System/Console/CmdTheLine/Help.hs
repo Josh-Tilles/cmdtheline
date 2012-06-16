@@ -17,6 +17,7 @@ import Data.Maybe    ( catMaybes )
 
 import System.IO
 
+
 invocation :: Char -> EvalInfo -> String
 invocation sep ei = case evalKind ei of
   Choice -> progName ++ [sep] ++ choiceName
@@ -254,7 +255,7 @@ eiSubst ei =
 page :: EvalInfo -> ( Title, [ManBlock] )
 page ei = ( title ei, nameSection ei ++ synopsisSection ei ++ text ei )
 
-print :: HFormat -> Handle -> EvalInfo -> IO ()
+print :: HelpFormat -> Handle -> EvalInfo -> IO ()
 print fmt h ei = Man.print (eiSubst ei) fmt h (page ei)
 
 prepSynopsis :: EvalInfo -> String

@@ -1,38 +1,29 @@
 import System.Console.CmdTheLine
 import Control.Applicative
-import Data.Default
 
 fizzBuzz :: String -> String -> Int -> IO ()
-fizzBuzz fizz buzz n = mapM_ fizzOrBuzzOr [1..n]
+fizzBuzz fizz buzz n = mapM_ fizzAndBuzzOr [1..n]
   where
-  fizzOrBuzzOr n = putStrLn output
+  fizzAndBuzzOr n = putStrLn output
     where
     output = case fizz' ++ buzz' of
       ""  -> show n
       str -> str
 
-    fizz'
-      | (n `mod` 3) == 0 = fizz
-      | otherwise        = ""
-
-    buzz'
-      | (n `mod` 5) == 0 = buzz
-      | otherwise        = ""
+    fizz' = if (n `mod` 3) == 0 then fizz else ""
+    buzz' = if (n `mod` 5) == 0 then buzz else ""
 
 fizz, buzz :: Term String
-fizz = opt "Fizz" $
-      (info   [ "Fizz", "fizz" ])
+fizz = opt "Fizz" $ (optInfo [ "Fizz", "fizz", "f" ])
      { argDoc = "A string to print in the 'Fizz' case." }
 
-buzz = opt "Buzz" $
-      (info   [ "Buzz", "buzz" ])
+buzz = opt "Buzz" $ (optInfo [ "Buzz", "buzz", "b" ])
      { argDoc = "A string to print in the 'Buzz' case." }
 
 times :: Term Int
-times = opt 100 $
-       (info    [ "times", "t" ])
+times = opt 100 $ (optInfo [ "times", "t" ])
       { argName = "TIMES"
-      , argDoc  = "Run FizzBuzz for the numbers 1 to $(argName)."
+      , argDoc  = "Run $(mname) for the numbers 1 to $(argName)."
       }
 
 term :: Term (IO ())

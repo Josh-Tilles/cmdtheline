@@ -36,6 +36,7 @@ Library
 
   exposed-modules: System.Console.CmdTheLine,
                    System.Console.CmdTheLine.Arg,
+                   System.Console.CmdTheLine.ArgVal,
                    System.Console.CmdTheLine.Term
 
   other-modules:   System.Console.CmdTheLine.Common,
@@ -44,5 +45,3 @@ Library
                    System.Console.CmdTheLine.Trie,
                    System.Console.CmdTheLine.Manpage,
                    System.Console.CmdTheLine.CmdLine
-
-  ghc-options: -fno-full-laziness

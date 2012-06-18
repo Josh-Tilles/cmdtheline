@@ -2,3 +2,7 @@ dist
 dist/*
 FizzBuzz
 cipher
+cp
+fail
+hello
+grep

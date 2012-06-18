@@ -56,7 +56,7 @@ parseOptArg str
   | str !! 1 /= '-' =
     if length str == 2
        then ( str,        Nothing )
-       else ( take 3 str, Just $ drop 3 str )
+       else ( take 2 str, Just $ drop 2 str )
 
   | otherwise       = case P.parse assignment "" str of
     Left _       -> ( str, Nothing )
@@ -109,7 +109,7 @@ parseArgs opti cl args = go 1 opti cl [] args
                                                          )
 
 {- Returns an updated CmdLine in which each positional arg mentioned in the
- - the list index `posInfo`, is given a value according the list of positional
+ - list index `posInfo`, is given a value according to the list of positional
  - argument values `args`.
  -}
 processPosArgs :: [ArgInfo] -> CmdLine -> [String] -> Err CmdLine
@@ -118,7 +118,7 @@ processPosArgs posInfo cl args
   | last <= maxSpec = Right cl'
   | otherwise       = Left  $ UsageFail excess
   where
-  last   = length args
+  last   = length args - 1
   excess = E.posExcess . map text $ takeEnd (last - maxSpec) args
 
   ( cl', maxSpec ) = go cl (-1) posInfo
@@ -135,12 +135,15 @@ processPosArgs posInfo cl args
       PosL rev pos -> result rev pos False take
       PosR rev pos -> result rev pos True  (takeEnd . (last -))
 
-    indexPositions pos args = [args !! (pos+1)]
+    indexPositions pos args = [args !! pos]
 
     result rev pos maxIsLast getPositions
-      | pos' < 0 || pos' > last = ( Pos [],                       maxSpec'' )
-      | otherwise               = ( Pos $ getPositions pos' args, maxSpec'' )
+      | pos' < 0 || cmp pos' last = ( Pos [], maxSpec'' )
+      | otherwise                 = ( Pos $ getPositions pos' args
+                                    , maxSpec''
+                                    )
       where
+      cmp       = if maxIsLast then (>=)       else (>)
       pos'      = if rev       then last - pos else pos
       maxSpec'' = if maxIsLast then last       else max pos' maxSpec
 

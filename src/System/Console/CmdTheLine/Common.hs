@@ -5,7 +5,6 @@
 module System.Console.CmdTheLine.Common where
 
 import Data.Default
-import Data.Unique
 import Data.Function    ( on )
 import Text.PrettyPrint ( Doc )
 
@@ -27,25 +26,31 @@ data PosKind = PosAny
              | PosN Bool Int
              | PosL Bool Int
              | PosR Bool Int
+               deriving ( Eq, Ord )
 
 -- | Information about an argument.  The following fields are exported for your
 -- use.
 --
--- [@argName@] :: 'String' A name to be used in the documentation to refer
--- to the argument's value. Defaults to @\"\"@.
+-- #argName# 
 --
--- [@argDoc@] :: 'String' A documentation string for the argument. Defaults
--- to @\"\"@.
+-- [@argName@] :: 'String' A name to be used in the documentation to
+-- refer to the argument's value. Defaults to @\"\"@.
 --
--- [@argHeading@] :: 'String' The heading under which to place the argument's
+-- #argDoc# 
+--
+-- [@argDoc@] :: 'String' A documentation string for the argument.
+-- Defaults to @\"\"@.
+--
+-- #argSection# 
+--
+-- [@argSection@] :: 'String' The section under which to place the argument's
 -- documentation.  Defaults to @\"OPTIONS\"@ for optional arguments and
 -- @\"ARGUMENTS\"@ for positional arguments.
 data ArgInfo = ArgInfo
-  { ident      :: Unique
-  , absence    :: Absence
+  { absence    :: Absence
   , argDoc     :: String
   , argName    :: String
-  , argHeading :: String
+  , argSection :: String
   , posKind    :: PosKind
   , optKind    :: OptKind
   , optNames   :: [String]
@@ -53,10 +58,17 @@ data ArgInfo = ArgInfo
   }
 
 instance Eq ArgInfo where
-  (==) = (==) `on` ident
+  ai == ai'
+    | isPos ai && isPos ai' = ((==) `on` posKind) ai ai'
+    | isOpt ai && isOpt ai' = ((==) `on` optNames) ai ai'
+    | otherwise             = False
 
+-- This Ord instance works for placing in 'Data.Map's, but not much else.
 instance Ord ArgInfo where
-  compare = compare `on` ident
+  compare ai ai'
+    | isPos ai && isPos ai' = (compare `on` posKind) ai ai'
+    | isOpt ai && isOpt ai' = (compare `on` optNames) ai ai'
+    | otherwise             = GT
 
 data Arg = Opt [( Int          -- The position were the argument was found.
                 , String       -- The name by which the argument was supplied.
@@ -67,13 +79,32 @@ data Arg = Opt [( Int          -- The position were the argument was found.
 type CmdLine = M.Map ArgInfo Arg
 
 isOpt, isPos :: ArgInfo -> Bool
-isOpt a = optNames a /= []
-isPos a = optNames a == []
+isOpt ai = optNames ai /= []
+isPos ai = optNames ai == []
 
-data ManBlock = S String        -- ^ A section heading.
+{- |
+  Any 'String' argument to a 'ManBlock' constructor may contain the
+  following significant forms for a limited kind of meta-programing.
+
+  * $(i,text): italicizes @text@.
+
+  * $(b,tesxt): bolds @text@.
+
+  * $(mname): evaluates to the name of the default term if there are choices
+    of commands, or the only term otherwise.
+
+  * $(tname): evaluates to the name of the currently evaluating term.
+
+  Additionally, text inside the content portion of an 'I' constructor may
+  contain one of the following significant forms.
+
+  * $(argName): evaluates to the name of the argument being documented.
+
+-}
+data ManBlock = S String        -- ^ A section title.
               | P String        -- ^ A paragraph.
               | I String String -- ^ A label-content pair. As in an argument
-                                --   definition and its acompanying
+                                --   definition and its accompanying
                                 --   documentation.
               | NoBlank         -- ^ Suppress the normal blank line following
                                 --   a 'P' or an 'I'.
@@ -91,20 +122,28 @@ type Page = ( Title, [ManBlock] )
 -- >   , termDoc  = "carry a line off"
 -- >   }
 data TermInfo = TermInfo
-  { termName      :: String     -- ^ The name of the command or program
-                                --   represented by the term. Defaults to
-                                --   @\"\"@.
-  , termDoc       :: String     -- ^ Documentation for the term. Defaults to
-                                --   @\"\"@.
-  , termHeading   :: String     -- ^ The heading under which to place the terms
-                                --   documentation. Defaults to @\"COMMANDS\"@.
-  , stdOptHeading :: String     -- ^ The Heading under which to place a term's
-                                --   argument's documentation by default.
-                                --   Defaults to @\"OPTIONS\"@.
-  , version       :: String     -- ^ A version string.  Must be left blank for
-                                --   commands. Defaults to @\"\"@.
-  , man           :: [ManBlock] -- ^ A list of 'ManBlock's to append to the
-                                --   default @[ManBlock]@. Defaults to @[]@.
+  {
+  -- | The name of the command or program represented by the term. Defaults to
+  -- @\"\"@.
+    termName      :: String
+
+  -- | Documentation for the term. Defaults to @\"\"@.
+  , termDoc       :: String
+
+  -- | The section under which to place the terms documentation.
+  -- Defaults to @\"COMMANDS\"@.
+  , termSection   :: String
+
+  -- | The section under which to place a term's argument's
+  -- documentation by default. Defaults to @\"OPTIONS\"@.
+  , stdOptSection :: String
+
+  -- | A version string.  Must be left blank for commands. Defaults to @\"\"@.
+  , version       :: String
+
+  -- | A list of 'ManBlock's to append to the default @[ManBlock]@. Defaults
+  -- to @[]@.
+  , man           :: [ManBlock]
   } deriving ( Eq )
 
 instance Default TermInfo where
@@ -112,8 +151,8 @@ instance Default TermInfo where
     { termName      = ""
     , version       = ""
     , termDoc       = ""
-    , termHeading   = "COMMANDS"
-    , stdOptHeading = "OPTIONS"
+    , termSection   = "COMMANDS"
+    , stdOptSection = "OPTIONS"
     , man           = []
     }
 
@@ -129,24 +168,26 @@ data EvalKind = Simple   -- The program has no commands.
               | Main     -- The default program is running.
               | Choice   -- A command has been chosen.
 
-data Fail = MsgFail   Doc   -- ^ An arbitrary message to be printed on failure.
-          | UsageFail Doc   -- ^ A message to be printed along with the usage
-                            --   on failure.
+data Fail =
+          -- | An arbitrary message to be printed on failure.
+            MsgFail   Doc
 
-          -- | A format to print help in, and the name of the command that
-          -- failed if applicable.
-          | HelpFail  HelpFormat (Maybe String) 
+          -- | A message to be printed along with the usage on failure.
+          | UsageFail Doc
 
--- | A monad for errors that can be handled seamlessly by the library.
--- 'Left' your `Fail`ure messages into 'Err', and fold them into the
--- library by processing your 'Term' with 'System.Console.CmdTheLine.Term.ret'
--- before passing it to 'System.Console.CmdTheLine.eval' and friends.
-type Err = Either Fail
+          -- | A format to print the help in and an optional name of the term
+          -- to print help for.  If 'Nothing' is supplied, help will be printed
+          -- for the currently evaluating term.
+          | HelpFail  HelpFormat (Maybe String)
+
+-- | A monad for values in the context of possibly failing with a helpful
+-- message.
+type Err a = Either Fail a
 
 type Yield a = EvalInfo -> CmdLine -> Err a
 
 -- | The underlying Applicative of the library.  A @Term@ represents a value
--- in the context of being computed from the command-line arguments.
+-- in the context of being computed from the command line arguments.
 data Term a = Term [ArgInfo] (Yield a)
 
 evalKind :: EvalInfo -> EvalKind

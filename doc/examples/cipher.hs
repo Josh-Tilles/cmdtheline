@@ -65,18 +65,18 @@ rot back n mStr = do
   where
   rotChar c = if isAlpha c then c' else c
     where
-    c' = at . seek back n $ seekTo c cycle
-    cycle
-      | not $ isAlpha c = error "attempt to rotate character outside Latin alphabet"
-      | isUpper c       = uppers
-      | otherwise       = lowers
+    c'    = at . seek back n $ seekTo c cycle
+    cycle = if isUpper c then uppers else lowers
 
 
 --
 -- Morse
 --
 
-code =
+switch ( x, y ) = ( y, x )
+
+fromCode = map switch toCode
+toCode =
   [ ( 'a', ".-"    ), ( 'b', "-..."  ), ( 'c', "-.-."  ), ( 'd', "-.."   )
   , ( 'e', "."     ), ( 'f', "..-."  ), ( 'g', "--."   ), ( 'h', "...."  )
   , ( 'i', ".."    ), ( 'j', ".---"  ), ( 'k', "-.-"   ), ( 'l', ".-.."  )
@@ -89,7 +89,14 @@ code =
   , ( ' ', "/"     )
   ]
 
-switch ( x, y ) = ( y, x )
+fromMorse, toMorse :: [String] -> Maybe String
+fromMorse    = mapM (`lookup` fromCode)
+
+toMorse strs = sepCat " / " <$> mapM convertLetters strs
+  where
+  convertLetters chars = sepCat " " <$> mapM (`lookup` toCode) chars
+
+  sepCat sep = concat . intersperse sep
 
 morse :: Bool -> Maybe String -> IO ()
 morse from mStr = do
@@ -99,7 +106,7 @@ morse from mStr = do
 
   if all pred input
      then return ()
-     else do hPutStrLn stderr errStr
+     else do hPutStrLn stderr err
              exitFailure
 
   convert input
@@ -107,46 +114,49 @@ morse from mStr = do
   pred = if from then (== '/') <||> (== '-') <||> (== '.') <||> isSpace
                  else isAlphaNum <||> isSpace
 
-  errStr = if from
-    then "err: morse input must be all spaces, '/'s, '-'s, and '.'s."
-    else "err: morse input must be alphanumeric and/or spaces"
+  err = if from
+    then "cipher: morse input must be all spaces, '/'s, '-'s, and '.'s."
+    else "cipher: morse input must be alphanumeric and/or spaces"
 
   convert str = maybe badConvert putStrLn . convert' . words $ map toLower str
     where
     badConvert = hPutStrLn stderr err >> exitFailure
       where
-      err = if from then "could not convert from morse"
-                    else "could not convert to morse"
+      err = if from then "cipher: could not convert from morse"
+                    else "cipher: could not convert to morse"
 
     convert' = if from then fromMorse else toMorse
-
-  fromMorse    = mapM (`lookup` map switch code)
-  toMorse strs = sepJoin " / " <$> mapM convertLetters strs
-    where
-    convertLetters chars = sepJoin " " <$> mapM (`lookup` code) chars
-
-    sepJoin sep = concat . intersperse sep
 
 
 --
 -- Terms
 --
 
-commonHeading = "COMMON OPTIONS"
-helpSection =
-  [ S commonHeading
-  , P "These options are common to all commands."
-  , S "MORE HELP"
-  , P "Use '$(mname) $(i,COMMAND) --help' for help on a single command."
-  , S "BUGS"
-  , P "Email bug reports to <eli.lee.frey@gmail.com>"
-  ]
+-- The heading underwhich to place common options.
+comOpts = "COMMON OPTIONS"
 
-input = opt Nothing (optInfo       [ "input", "i" ])
+-- A modified default 'TermInfo' to be shared by commands.
+def' :: TermInfo
+def' = def
+  { man =
+      [ S comOpts
+      , P "These options are common to all commands."
+      , S "MORE HELP"
+      , P "Use '$(mname) $(i,COMMAND) --help' for help on a single command."
+      , S "BUGS"
+      , P "Email bug reports to <snideHighland@example.com>"
+      ]
+  , stdOptSection = comOpts
+  }
+
+-- 'input' is a common option. We set its 'argSection' field to 'comOpts' so
+-- that it is placed under that heading instead of the default '"OPTIONS"'
+-- heading, which we will reserve for command-specific options.
+input = opt Nothing (optInfo [ "input", "i" ])
       { argName    = "INPUT"
-      , argDoc     = "For specifying input on the command-line.  If present, "
+      , argDoc     = "For specifying input on the command line.  If present, "
                   ++ "input is not read form standard-in."
-      , argHeading = commonHeading
+      , argSection = comOpts
       }
 
 rotTerm = ( rot <$> back <*> n <*> input, termInfo )
@@ -161,15 +171,14 @@ rotTerm = ( rot <$> back <*> n <*> input, termInfo )
        , argDoc  = "How many places to rotate by."
        }
 
-  termInfo = def
+  termInfo = def'
     { termName = "rot"
     , termDoc  = "Rotate the input characters by N."
     , man      = [ S "DESCRIPTION"
                  , P $ "Rotate input gathered from INPUT or standard-in N "
                     ++ "places.  The input must be composed totally of "
                     ++ "alphabetic characters and spaces."
-                 ] ++ helpSection
-    , stdOptHeading = commonHeading
+                 ] ++ man def'
     }
 
 
@@ -181,20 +190,19 @@ morseTerm = ( morse <$> from <*> input, termInfo )
                   ++ "If absent, convert from Latin alphabet to morse-code."
        }
 
-  termInfo = def
+  termInfo = def'
     { termName = "morse"
     , termDoc  = "Convert to and from morse-code."
     , man      = [ S "DESCRIPTION"
                  , P desc
-                 ] ++ helpSection
-    , stdOptHeading = commonHeading
+                 ] ++ man def'
     }
 
   desc = concat
-    [ "Converts input gathered from INPUT or standard-in to and from morse "
-    , "code. 'dah' is converted to '-', 'dit' to '.'.  Each character is "
-    , "seperated from the next by one or more ' '.  Words are seperated "
-    , "by a '/'."
+    [ "Converts input gathered from INPUT or standard in to and from morse "
+    , "code. 'dah' is represented by '-', 'dit' by '.'.  Each morse character "
+    , "is seperated from the next by one or more ' '.  Morse words are "
+    , "seperated by a '/'."
     ]
 
 
@@ -202,12 +210,10 @@ defaultTerm = ( ret $ const (Left $ HelpFail Pager Nothing) <$> input
               , termInfo
               )
   where
-  termInfo = def
+  termInfo = def'
     { termName      = "cipher"
     , version       = "v1.0"
     , termDoc       = doc
-    , stdOptHeading = commonHeading
-    , man           = helpSection
     }
 
   doc = "An implementation of the morse-code and rotational(ceaser) ciphers."

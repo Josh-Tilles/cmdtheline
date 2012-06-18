@@ -56,7 +56,7 @@ nameSection ei =
 synopsis :: EvalInfo -> String
 synopsis ei = case evalKind ei of
   Main   -> concat [ "$(b,", invocation ' ' ei, ") $(i,COMMAND) ..." ]
-  _      -> concat [ "$(b,", invocation ' ' ei, ") [$(i,OPTION)]...", args ]
+  _      -> concat [ "$(b,", invocation ' ' ei, ") [$(i,OPTION)]... ", args ]
   where
   args = concat . intersperse " " $ map snd args'
     where
@@ -70,8 +70,8 @@ synopsis ei = case evalKind ei of
     v | argName ai == "" = "$(i,ARG)"
       | otherwise        = concat [ "$(i,", argName ai, ")" ]
 
-    v' | absence ai == Absent = show v
-       | otherwise            = concat [ "[", show v, "]" ]
+    v' | absence ai == Absent = v
+       | otherwise            = concat [ "[", v, "]" ]
 
     v'' = v' ++ followedBy
 
@@ -151,7 +151,7 @@ makeArgItems ei = map format xs
     | c /= EQ   = c
     | otherwise = compare' ai ai'
     where
-    c        = (compare `on` argHeading) ai ai'
+    c        = (compare `on` argSection) ai ai'
     compare' = case ( isOpt ai, isOpt ai' ) of
       ( True,  True  ) -> compare `on` key . optNames
       ( False, False ) -> compare `on` map toLower . argName
@@ -164,7 +164,7 @@ makeArgItems ei = map format xs
       where
       k = map toLower . head $ sortBy descCompare names
 
-  format ai = ( argHeading ai, I label text )
+  format ai = ( argSection ai, I label text )
     where
     label = makeArgLabel ai ++ argvDoc
     text  = substDocName (argName ai) (argDoc ai)
@@ -194,7 +194,7 @@ makeCmdItems ei = case evalKind ei of
   Choice -> []
   Main   -> sortBy (descCompare `on` fst) . foldl addCmd [] $ choices ei
   where
-  addCmd acc ( ti, _ ) = ( termHeading ti, I (label ti) (termDoc ti) )
+  addCmd acc ( ti, _ ) = ( termSection ti, I (label ti) (termDoc ti) )
                        : acc
   label ti = "$(b," ++ termName ti ++ ")"
 

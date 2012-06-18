@@ -144,7 +144,7 @@ prepGroffBlocks subst blocks = prep =<< blocks
 
 printGroffPage :: Subst -> Handle -> Page -> IO ()
 printGroffPage subst h page = hPutStr h $ unlines
-  [ ".\\\" Pipe this output to groff -man -Tutf8 | less"
+  [ ".\\\" Pipe this output to groff -man -Tascii | less"
   , ".\\\""
   , concat [ ".TH \"", n, "\" ", show s
            , " \"", a1, "\" \"", a2, "\" \"", a3, "\"" ]
@@ -211,7 +211,7 @@ printToPager print h page = do
   where
   preped roff pager tmpFile = ( cmd, tmpFile )
     where
-    cmd = concat [ roff, " -man -Tutf8 < ", tmpFile, " | ", pager ]
+    cmd = concat [ roff, " -man -Tascii < ", tmpFile, " | ", pager ]
 
   naked pager tmpFile = ( cmd, tmpFile )
     where

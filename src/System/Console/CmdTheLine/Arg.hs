@@ -2,23 +2,22 @@
  - This is open source software distributed under a MIT license.
  - See the file 'LICENSE' for further information.
  -}
-{-# LANGUAGE FlexibleInstances #-}
 module System.Console.CmdTheLine.Arg
   (
-  -- * Parsing values from the command-line
-    ArgVal(..), ArgParser, ArgPrinter
-  , fromParsec, just, maybePP, enum
-
   -- * Creating ArgInfos
-  , optInfo, posInfo
+    optInfo, posInfo
 
-  -- * Flag options
+  -- * Optional arguments
+  -- $opt
+
+  -- ** Flag options
   , flag, flagAll, vFlag, vFlagAll
 
-  -- * Assignable options
+  -- ** Assignable options
   , opt, defaultOpt, optAll, defaultOptAll
 
-  -- * Positionals
+  -- * Positional arguments
+  -- $pos
   , pos, revPos, posAny, posLeft, posRight, revPosLeft, revPosRight
 
   -- * Constraining Terms
@@ -26,36 +25,33 @@ module System.Console.CmdTheLine.Arg
   ) where
 
 import System.Console.CmdTheLine.Common
-import System.Console.CmdTheLine.CmdLine
+import System.Console.CmdTheLine.CmdLine ( optArg, posArg )
+import System.Console.CmdTheLine.ArgVal  ( ArgVal(..) )
 import qualified System.Console.CmdTheLine.Err  as E
 import qualified System.Console.CmdTheLine.Trie as T
 
-import Data.Function ( on )
-import Control.Applicative hiding ( (<|>), empty )
+import Control.Applicative
 import Text.PrettyPrint
-import Text.Parsec
 
-import Data.Unique
-import Data.Default
-import Data.List ( sort, sortBy )
-import Data.Ratio ( Ratio )
-
-import System.IO.Unsafe
+import Data.List ( sort )
 
 argFail :: Doc -> Err a
 argFail = Left . MsgFail
 
--- | Initialize an 'ArgInfo' by providing a list of names.  The fields 'argDoc'
--- 'argName' and 'argHeading' can then be manipulated post-mortem, as in
+-- | Initialize an 'ArgInfo' by providing a list of names.  The fields
+-- @argName@(found at "System.Console.CmdTheLine#argName"),
+-- @argDoc@(found at "System.Console.CmdTheLine#argDoc"), and
+-- @argSection@(found at "System.Console.CmdTheLine#argSection")
+-- can then be manipulated post-mortem, as in
 --
 -- > inf =(optInfo    [ "i", "insufflation" ])
 -- >     { argName    = "INSUFFERABLE"
 -- >     , argDoc     = "in the haunted house's harrow"
--- >     , argHeading = "NOT FOR AUGHT"
+-- >     , argSection = "NOT FOR AUGHT"
 -- >     }
 --
 -- Names of one character in length will be prefixed by @-@ on the
--- command-line, while longer names will be prefixed by @--@.
+-- command line, while longer names will be prefixed by @--@.
 --
 -- This function is meant to be used with optional arguments produced by 'flag',
 -- 'opt', and friends-- not with positional arguments.  Positional arguments
@@ -67,26 +63,25 @@ argFail = Left . MsgFail
 -- All optional arguments must have names.
 optInfo :: [String] -> ArgInfo
 optInfo names = ArgInfo
-  { ident      = unsafePerformIO newUnique
-  , absence    = Present ""
+  { absence    = Present ""
   , argDoc     = ""
   , argName    = ""
-  , argHeading = defaultHeading
+  , argSection = defaultSection
   , posKind    = PosAny
   , optKind    = FlagKind
   , optNames   = map dash names
   , repeatable = False
   }
   where
-  defaultHeading
+  defaultSection
     | names == [] = "ARGUMENTS"
     | otherwise   = "OPTIONS"
 
-  dash "" = error "System.Console.CmdTheLine.Arg.info "
-               ++ "recieved empty string as name"
+  dash "" =
+    error "System.Console.CmdTheLine.Arg.info recieved empty string as name"
+
   dash str@[_] = "-"  ++ str
   dash str     = "--" ++ str
-{-# NOINLINE optInfo #-}
 
 -- | As 'optInfo' but for positional arguments, which by virtue of their
 -- positions require no names.  If a positional argument is created with a
@@ -97,8 +92,45 @@ optInfo names = ArgInfo
 posInfo :: ArgInfo
 posInfo = optInfo []
 
--- | Create a command-line flag that can appear at most once on the
--- command-line.  Yields @False@ in absence and @True@ in presence.
+
+{- $opt
+
+  An optional argument is specified on the command line by a /name/ possibly
+  followed by a /value/.
+
+  The name of an option can be /short/ or /long/.
+
+  * A /short/ name is a dash followed by a single alphanumeric character:
+    @-h@, @-q@, @-I@.
+
+  * A /long/ name is two dashes followed by alphanumeric characters and dashes:
+    @--help@, @--silent@, @--ignore-case@.
+
+  More than one name may refer to the same optional argument.  For example in
+  a given program the names @-q@, @--quiet@, and @--silent@ may all stand for
+  the same boolean argument indicating the program to be quiet.  Long names can
+  be specified by any non-ambiguous prefix.
+
+  There are three ways to assign values to an optional argument on the command
+  line.
+
+  * As the next token on the command line: @-o a.out@, @--output a.out@.
+
+  * Glued to a short name: @-oa.out@.
+
+  * Glued to a long name after an equal character: @--output=a.out@.
+
+  Glued forms are necessary if the value itself starts with a dash, as is the
+  case for negative numbers, @--min=-10@.
+
+-}
+
+--
+-- Flags
+--
+
+-- | Create a command line flag that can appear at most once on the
+-- command line.  Yields @False@ in absence and @True@ in presence.
 flag :: ArgInfo -> Term Bool
 flag ai =
   if isPos ai
@@ -147,7 +179,7 @@ vFlag v assoc = Term (map flag assoc) yield
       Nothing       -> Right v
       Just ( _, v ) -> Right v
 
-    go mv (( v, a ) : rest) = case optArg cl a of
+    go mv (( v, ai ) : rest) = case optArg cl ai of
       []                  -> go mv rest
 
       [( _, f, Nothing )] -> case mv of
@@ -162,8 +194,8 @@ vFlag v assoc = Term (map flag assoc) yield
 
 -- | 'vFlagAll' @vs assoc@ is as 'vFlag' except that it can be present an
 -- infinity of times.  In absence, @vs@ is yielded.  When present, each
--- appearance is collected in-order in the result.
-vFlagAll :: Ord a => [a] -> [( a, ArgInfo)] -> Term [a]
+-- value is collected in the order they appear.
+vFlagAll :: [a] -> [( a, ArgInfo)] -> Term [a]
 vFlagAll vs assoc = Term (map flag assoc) yield
   where
   flag ( _, a ) 
@@ -173,7 +205,7 @@ vFlagAll vs assoc = Term (map flag assoc) yield
   yield _ cl = go [] assoc
     where
     go []  [] = Right vs
-    go acc [] = Right . map snd $ sort acc
+    go acc [] = Right . reverse $ map snd acc
 
     go acc (( mv, a ) : rest) = case optArg cl a of
       [] -> go acc rest
@@ -225,7 +257,7 @@ opt :: ArgVal a => a -> ArgInfo -> Term a
 opt = mkOpt Nothing
 
 -- | 'defaultOpt' @def v ai@ is as 'opt' except if it is present and no value is
--- assigned on the command-line, @def@ is the result.
+-- assigned on the command line, @def@ is the result.
 defaultOpt :: ArgVal a => a -> a -> ArgInfo -> Term a
 defaultOpt x = mkOpt $ Just x
 
@@ -251,18 +283,33 @@ mkOptAll vopt vs ai
         Nothing -> argFail $ E.optValueMissing (text f)
         Just dv -> Right   ( pos, dv )
 
--- | 'optAll' @vs ai@ is like 'opt' except that it yields a list of results in
--- absence and can appear an infinity of times.  The values it is assigned on
--- the command-line are accumulated in the order they appear result.
+-- | 'optAll' @vs ai@ is like 'opt' except that it yields @vs@ in absence and
+-- can appear an infinity of times.  The values it is assigned on the command
+-- line are accumulated in the order they appear.
 optAll :: ( ArgVal a, Ord a ) => [a] -> ArgInfo -> Term [a]
 optAll = mkOptAll Nothing
 
 -- | 'defaultOptAll' @def vs ai@ is like 'optAll' except that if it is present
 -- without being assigned a value, the value @def@ takes its place in the list
--- of results
+-- of results.
 defaultOptAll :: ( ArgVal a, Ord a ) => a -> [a] -> ArgInfo -> Term [a]
 defaultOptAll x = mkOptAll $ Just x
 
+
+{- $pos
+
+  Positional arguments are tokens on the command line that are not option names
+  or the values being assigned to an optional argument.
+
+  Since positional arguments may be mistaken as the optional value of an
+  optional argument or they may need to look like an optional name, anything
+  that follows the special token @--@(with spaces on both sides) on the command
+  line is considered to be a positional argument.
+
+  Positional arguments are listed in documentation sections iff they are
+  assigned both an @argName@ and an @argDoc@.
+
+-}
 
 --
 -- Positional arguments.
@@ -274,7 +321,7 @@ parsePosValue ai v = case parser v of
   Right v -> Right v
 
 mkPos :: ArgVal a => Bool -> Int -> a -> ArgInfo -> Term a
-mkPos rev pos v ai = Term [ai] yield
+mkPos rev pos v ai = Term [ai'] yield
   where
   ai' = ai { absence = Present . show $ pp v
            , posKind = PosN rev pos
@@ -285,11 +332,11 @@ mkPos rev pos v ai = Term [ai] yield
     _   -> error "saw list with more than one member in pos converter"
 
 -- | 'pos' @n v ai@ is an argument defined by the @n@th positional argument
--- on the command-line. If absent the value @v@ is returned.
+-- on the command line. If absent the value @v@ is returned.
 pos :: ArgVal a => Int -> a -> ArgInfo -> Term a
 pos    = mkPos False
 
--- | 'revPos' @n v ai@ is as 'pos' but counting from the end of the command-line
+-- | 'revPos' @n v ai@ is as 'pos' but counting from the end of the command line
 -- to the front.
 revPos :: ArgVal a => Int -> a -> ArgInfo -> Term a
 revPos = mkPos True
@@ -312,17 +359,17 @@ posAny = posList PosAny
 -- | 'posLeft' @n vs ai@ yield a list of all positional arguments to the left of
 -- the @n@th positional argument or @vs@ if there are none.
 posLeft :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
-posLeft     = posList . PosL False
+posLeft = posList . PosL False
 
 -- | 'posRight' @n vs ai@ is as 'posLeft' except yielding all values to the right
 -- of the @n@th positional argument.
 posRight :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
-posRight    = posList . PosR False
+posRight = posList . PosR False
 
 -- | 'revPosLeft' @n vs ai@ is as 'posLeft' except @n@ counts from the end of the
 -- command line to the front.
 revPosLeft :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
-revPosLeft  = posList . PosL True
+revPosLeft = posList . PosL True
 
 -- | 'revPosRight' @n vs ai@ is as 'posRight' except @n@ counts from the end of
 -- the command line to the front.
@@ -334,14 +381,15 @@ revPosRight = posList . PosR True
 -- Arguments as terms.
 --
 
-absent = map (\ a -> a { absence = Absent })
+absent = map (\ ai -> ai { absence = Absent })
 
--- | @required term@ is a term that fails in the 'Nothing' and yields @a@ in
--- the 'Just'.
+-- | 'required' @term@ converts @term@ so that it fails in the 'Nothing' and
+-- yields @a@ in the 'Just'.
 --
--- This is intended for required positional arguments.  There is nothing
--- stopping you from using it with optional arguments except hopefully your
--- sanity.
+-- This is used for required positional arguments.  There is nothing
+-- stopping you from using it with optional arguments, except that they
+-- would no longer be optional and it would be confusing from a user's
+-- perspective.
 required :: Term (Maybe a) -> Term a
 required (Term ais yield) = Term ais' yield'
   where
@@ -350,7 +398,7 @@ required (Term ais yield) = Term ais' yield'
     Left  e  -> Left  e
     Right mv -> maybe (argFail . E.argMissing $ head ais') Right mv
 
--- | @nonEmpty term@ is a term that fails if its result is empty. intended
+-- | 'nonEmpty' @term@ is a term that fails if its result is empty. Intended
 -- for non-empty lists of positional arguments.
 nonEmpty :: Term [a] -> Term [a]
 nonEmpty (Term ais yield) = Term ais' yield'
@@ -361,7 +409,7 @@ nonEmpty (Term ais yield) = Term ais' yield'
     Right [] -> argFail . E.argMissing $ head ais'
     Right xs -> Right   xs
 
--- | @lastOf term@ isa term that fails if its result is empty and evaluates
+-- | 'lastOf' @term@ is a term that fails if its result is empty and evaluates
 -- to the last element of the resulting list otherwise.  Intended for lists
 -- of flags or options where the last takes precedence.
 lastOf :: Term [a] -> Term a
@@ -371,138 +419,3 @@ lastOf (Term ais yield) = Term ais yield'
     Left e   -> Left    e
     Right [] -> argFail . E.argMissing $ head ais
     Right xs -> Right   $ last xs
-
-
---
--- ArgVal
---
-
-
--- | The type of parsers of individual command-line argument values.
-type ArgParser  a = String -> Either Doc a
-
--- | The type of printers of values retrieved from the command-line.
-type ArgPrinter a = a -> Doc
-
-decPoint      = string "."
-digits        = many1 digit
-concatParsers = foldl (liftA2 (++)) $ return []
-
-pInteger  :: ( Read a, Integral a ) => Parsec String () a
-pFloating :: ( Read a, Floating a ) => Parsec String () a
-pInteger      = read <$> digits
-pFloating     = read <$> concatParsers [ digits, decPoint, digits ]
-
--- | 'fromParsec' @onErr p@ makes an 'ArgParser' from @p@ using @onErr@ to
--- produce meaningful error messages.  On failure, @onErr@ will receive a
--- raw string of the value found on the command-line.
-fromParsec :: ( String -> Doc) -> Parsec String () a -> ArgParser a
-fromParsec onErr p str = either (const . Left $ onErr str) Right
-                       $ parse p "" str
-
--- | A parser of 'Maybe' values of 'ArgVal' instance's. A convenient default
--- that merely lifts the 'ArgVal' instance's parsed value with 'Just'.
-just :: ArgVal a => ArgParser (Maybe a)
-just = either Left (Right . Just) . parser
-
--- | A printer of 'Maybe' values of 'ArgVal'. A convenient default that prints
--- nothing on the 'Nothing' and just the value on the 'Just'.
-maybePP :: ArgVal a => ArgPrinter (Maybe a)
-maybePP = maybe empty id . fmap pp
-
--- | A parser of enumerated values conveyed as an association list of
--- @( string, value )@ pairs.  Unambiguous prefixes of @string@ map to
--- @value@.
-enum :: [( String, a )] -> ArgParser a
-enum assoc str = case T.lookup str trie of
-  Right v           -> Right v
-  Left  T.Ambiguous -> Left  $ E.ambiguous "enum value" str ambs
-  Left  T.NotFound  -> Left  . E.invalidVal (text str) $ text "expected" <+> alts
-  where
-  ambs = sort $ T.ambiguities trie str
-  alts = E.alts $ map fst assoc
-  trie = T.fromList assoc
-
-invalidVal = E.invalidVal `on` text
-
--- | The class of values that can be parsed from the command line. Instances
--- must provide both methods.
-class ArgVal a where
-  parser  :: ArgParser a
-  pp      :: ArgPrinter a
-
-instance ArgVal Bool where
-  parser   = fromParsec onErr
-           $ (True <$ string "true") <|> (False <$ string "false")
-    where
-    onErr str = E.invalidVal (text str) $ E.alts [ "true", "false" ]
-
-  pp True  = text "true"
-  pp False = text "false"
-
-instance ArgVal (Maybe Bool) where
-  parser = just
-  pp     = maybePP
-
-instance ArgVal [Char] where
-  parser = Right
-  pp = text
-
-instance ArgVal (Maybe [Char]) where
-  parser = just
-  pp     = maybePP
-
-instance ArgVal Int where
-  parser = fromParsec onErr pInteger
-    where
-    onErr str = invalidVal str "expected an integer"
-  pp = int
-
-instance ArgVal (Maybe Int) where
-  parser = just
-  pp     = maybePP
-
-instance ArgVal Integer where
-  parser = fromParsec onErr pInteger
-    where
-    onErr str = invalidVal str "expected an integer"
-  pp = integer
-
-instance ArgVal (Maybe Integer) where
-  parser = just
-  pp     = maybePP
-
-instance ArgVal Float where
-  parser = fromParsec onErr pFloating
-    where
-    onErr str = invalidVal str "expected a floating point number"
-  pp = float
-
-instance ArgVal (Maybe Float) where
-  parser = just
-  pp     = maybePP
-
-instance ArgVal Double where
-  parser = fromParsec onErr pFloating
-    where
-    onErr str = invalidVal str "expected a floating point number"
-  pp = double
-
-instance ArgVal (Maybe Double) where
-  parser = just
-  pp     = maybePP
-
-instance ArgVal (Ratio Integer) where
-  parser = fromParsec onErr
-         $ read <$> concatParsers [ digits <* spaces
-                                  , string "%"
-                                  , spaces >> digits
-                                  ]
-    where
-    onErr str =
-      invalidVal str "expected a ratio in the form `numerator % denominator'"
-  pp = rational
-
-instance ArgVal (Maybe (Ratio Integer)) where
-  parser = just
-  pp     = maybePP

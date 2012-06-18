@@ -4,26 +4,24 @@
  -}
 module System.Console.CmdTheLine.Term
   (
-  -- * User error reporting
-    ret
+  -- * Evaluating Terms
+  -- ** Simple command line programs
+    eval, exec, run
 
-  -- * Simple command-line programs
-  , eval, exec, run
-
-  -- * Command-based command-line programs
+  -- ** Multi-command command line programs
   , evalChoice, execChoice, runChoice
   ) where
 
 import System.Console.CmdTheLine.Common
-import System.Console.CmdTheLine.CmdLine
+import System.Console.CmdTheLine.CmdLine ( create )
 import System.Console.CmdTheLine.Arg
+import System.Console.CmdTheLine.ArgVal
 import qualified System.Console.CmdTheLine.Err     as E
 import qualified System.Console.CmdTheLine.Help    as H
 import qualified System.Console.CmdTheLine.Trie    as T
 
 import Control.Applicative hiding ( (<|>), empty )
 import Control.Arrow       ( second )
-import Control.Monad       ( join )
 
 import Data.List    ( find, sort )
 import Data.Maybe   ( fromJust )
@@ -40,9 +38,7 @@ import Text.Parsec
 -- EvalErr
 --
 
-
-data EvalFail = Help  HelpFormat 
-                      (Maybe String) -- The name of the command being run
+data EvalFail = Help  HelpFormat (Maybe String)
               | Usage Doc
               | Msg   Doc
               | Version
@@ -58,12 +54,16 @@ fromErr :: Err a -> EvalErr a
 fromErr = either fromFail return
 
 printEvalErr :: EvalInfo -> EvalFail -> IO ()
-printEvalErr ei (Help fmt mName) = either print (H.print fmt stdout) eEi
+printEvalErr ei fail = case fail of
+  Usage doc -> do E.printUsage   stderr ei doc
+                  exitFailure
+  Msg   doc -> do E.print        stderr ei doc
+                  exitFailure
+  Version   -> H.printVersion stdout ei
+  Help fmt mName -> either print (H.print fmt stdout) (eEi mName)
   where
   -- Either we are in the default term, or the commands name is in `mName`.
-  eEi = maybe (Right ei { term = main ei })
-              process
-              mName
+  eEi = maybe (Right ei) process
 
   -- Either the command name exists, or else it does not and we're in trouble.
   process name = do
@@ -71,11 +71,6 @@ printEvalErr ei (Help fmt mName) = either print (H.print fmt stdout) eEi
       Just x  -> Right x
       Nothing -> Left  $ E.errHelp (text name)
     return ei { term = cmd' } 
-
-printEvalErr ei (Usage doc) = E.printUsage stderr ei doc
-printEvalErr ei (Msg   doc) = E.print stderr ei doc
-
-printEvalErr ei Version = H.printVersion stdout ei
 
 
 --
@@ -126,31 +121,26 @@ addStdOpts ei = ( hLookup, vLookup, ei' )
     _  -> ( ais, Just lookup )
     where
     Term ais lookup = flag (optInfo ["version"])
-                    { argHeading = heading
+                    { argSection = section
                     , argDoc     = "Show version information."
                     }
 
   ( args', hLookup ) = ( ais ++ args, lookup )
     where
     Term ais lookup = defaultOpt (Just Pager) Nothing (optInfo ["help"])
-                    { argHeading = heading
+                    { argSection = section
                     , argName    = "FMT"
                     , argDoc     = doc
                     }
 
-  heading = stdOptHeading . fst $ term ei'
+  section = stdOptSection . fst $ term ei
   doc     = "Show this help in format $(argName) (pager, plain, or groff)."
 
   addArgs = second (args' ++)
-  ei' = ei { term = addArgs $ term ei
-           , main = addArgs $ main ei
-           , choices = map addArgs $ choices ei
-           }
-{-
-  ais' = zipWith (\ ai n -> ai { ident = n }) ais [1..]
-    where
-    ais = reverse $ args' ++ snd (term ei)
--}
+  ei'     = ei { term = addArgs $ term ei
+               , main = addArgs $ main ei
+               , choices = map addArgs $ choices ei
+               }
 
 
 --
@@ -187,6 +177,7 @@ evalTerm ei yield args = either handleErr return $ do
   handleErr e = do printEvalErr ei' e
                    exitFailure
 
+
 chooseTerm :: TermInfo -> [( TermInfo, a )] -> [String]
            -> Err ( TermInfo, [String] )
 chooseTerm ti _       []              = Right ( ti, [] )
@@ -207,39 +198,31 @@ chooseTerm ti choices args@( arg : rest )
 mkCommand :: ( Term a, TermInfo ) -> Command
 mkCommand ( Term ais _, ti ) = ( ti, ais )
  
--- Prep an EvalInfo suitable for catching errors raised by `chooseTerm`.
+-- Prep an EvalInfo suitable for catching errors raised by 'chooseTerm'.
 chooseTermEi :: ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> EvalInfo
-chooseTermEi mainTerm choices = ei
+chooseTermEi mainTerm choices = EvalInfo command command eiChoices
   where
-  ei        = EvalInfo command command eiChoices
-  eiChoices = map mkCommand choices
   command   = mkCommand mainTerm
+  eiChoices = map mkCommand choices
 
 
 --
 -- User-Facing Functionality
 --
 
--- | 'ret' @term@ folds @term@'s 'Err' context into the library to be handled
--- internally and seamlesly as other error messages that are built in.
-ret :: Term (Err a) -> Term a
-ret (Term ais yield) = Term ais yield'
-  where
-  yield' ei cl = join $ yield ei cl
-
 -- | 'eval' @args ( term, termInfo )@ allows the user to pass @args@ directly to
 -- the evaluation mechanism.  This is usefull if some kind of pre-processing is
--- required.  If you do not need to pre-process command-line arguments, use one
+-- required.  If you do not need to pre-process command line arguments, use one
 -- of 'exec' or 'run'.  On failure the program exits.
 eval :: [String] -> ( Term a, TermInfo ) -> IO a
-eval args ( term, termInfo ) = evalTerm ei yield args
+eval args termPair@( term, _ ) = evalTerm ei yield args
   where
-  (Term ais yield) = term
-  ei               = EvalInfo command command []
-  command          = ( termInfo, ais )
+  (Term _ yield) = term
+  command = mkCommand termPair
+  ei = EvalInfo command command []
 
--- | 'exec' @( term, termInfo )@ executes a command-line program, directly
--- grabing the command-line arguments and returning the result upon succesfull
+-- | 'exec' @( term, termInfo )@ executes a command line program, directly
+-- grabing the command line arguments and returning the result upon succesfull
 -- evaluation of @term@.  On failure the program exits.
 exec :: ( Term a, TermInfo ) -> IO a
 exec term = do
@@ -258,22 +241,18 @@ run term = do
 -- programs that provide a choice of commands.
 evalChoice :: [String] -> ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a
 evalChoice args mainTerm@( term, termInfo ) choices = do
-  ( ei, yield, args' ) <- either handleErr return $ do
+  ( chosen, args' ) <- either handleErr return . fromErr
+                     $ chooseTerm termInfo eiChoices args
 
-    ( chosen, args' ) <- fromErr $ chooseTerm termInfo eiChoices args
+  let (Term ais yield) = fst . fromJust . find ((== chosen) . snd)
+                       $ mainTerm : choices
 
-    let (Term ais yield) = fst . fromJust $ find ((== chosen) . snd)
-                                          $ mainTerm : choices
-
-        ei = EvalInfo ( chosen, ais ) mainEi eiChoices
-
-    return ( ei, yield, args' )
+      ei = EvalInfo ( chosen, ais ) mainEi eiChoices
 
   evalTerm ei yield args'
-
   where
-  eiChoices = map mkCommand choices
   mainEi    = mkCommand mainTerm
+  eiChoices = map mkCommand choices
 
   -- Only handles errors caused by chooseTerm.
   handleErr e = do printEvalErr (chooseTermEi mainTerm choices) e

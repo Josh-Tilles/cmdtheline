@@ -39,13 +39,13 @@ notDir  s = quotes (s) <+> text "is not a directory"
 
 isDir   s = quotes (s) <+> text "is a directory"
 
-element kind s exp = sep
-  [ text "invalid element in", kind, parens . quotes $ s, exp ]
+element kind str exp = sep
+  [ text "invalid element in", text kind, parens . quotes $ text str, exp ]
 
-sepMiss sep s = invalidVal s $
+sepMiss sep str = invalidVal (text str) $
   hsep [ text "missing a", quotes $ char sep, text "separator" ]
 
-unknown kind v = sep [ text "unkown", text kind, quotes $ text v ]
+unknown kind v = sep [ text "unknown", text kind, quotes $ text v ]
 
 ambiguous kind s ambs = hsep
   [ text kind, quotes $ text s, text "ambiguous, could be", alts ambs ]
@@ -95,7 +95,7 @@ argMissing ai
       | otherwise                = longName xs
 
 print :: Handle -> EvalInfo -> Doc -> IO ()
-print h ei e = hPrint h $ sep [ text . termName . fst $ main ei, e ]
+print h ei e = hPrint h $ (text . termName . fst $ main ei) <> char ':' <+> e
 
 prepTryHelp :: EvalInfo -> String
 prepTryHelp ei =

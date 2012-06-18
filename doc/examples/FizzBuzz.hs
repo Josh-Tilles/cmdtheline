@@ -35,7 +35,7 @@ termInfo = def
   , version  = "v1.0"
   , termDoc  = "An implementation of the world renowned FizzBuzz algorithm."
   , man      = [ S "BUGS"
-               , P "Email bug reports to <eli.lee.frey@gmail.com>"
+               , P "Email bug reports to <sirEdwardDrank@example.com>"
                ]
   }
 

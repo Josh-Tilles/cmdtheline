@@ -13,11 +13,15 @@ grep pattern dests = do
 grepTerm = ( grep <$> pattern <*> files, termInfo )
   where
   pattern  = required $ pos 0 Nothing posInfo { argName = "PATTERN" }
-  files    = nonEmpty $ posRight 0 [] posInfo { argName = "FILE"    }
+  files    = posRight 0 [] posInfo { argName = "FILE"    }
   termInfo = def
     { termName = "grep"
     , version  = "2.5"
-    , termDoc  = "Search for PATTERN in FILE(s)."
+    , termDoc  = "Search for PATTERN in FILE(s) or standard in."
+    , man      =
+      [ S "BUGS"
+      , P "Please send bug reports to <throatWobblerMangrove@example.com>"
+      ]
     }
 
 main = run grepTerm

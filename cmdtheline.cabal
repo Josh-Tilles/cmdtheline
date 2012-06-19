@@ -3,7 +3,7 @@ Version: 0.1.0.0
 Synopsis: Declaritive command-line option parsing and documentation library.
 Description:
   CmdTheLine aims to remove tedium from the definition of command-line
-  programs.
+  programs, producing usage, help and man pages with little effort.
   .
   The inspiration was found in Daniel Bunzli's
   <http://erratique.ch/software/cmdliner> library.
@@ -26,12 +26,17 @@ Category:      Console
 Cabal-version: >=1.6
 Build-type:    Simple
 
-extra-source-files: doc/examples/*.hs
+Extra-source-files: doc/examples/*.hs
+
+Source-repository head
+  type:     git
+  location: git://github.com/eli-frey/cmdtheline.git
 
 Library
   hs-source-dirs: src
   extensions:     FlexibleInstances
-  build-depends:  base >= 4.5, containers >= 0.4, parsec >= 3.1, pretty >= 1.1,
+  build-depends:  base >= 4.5 && < 5, containers >= 0.4 && < 0.5,
+                  parsec >= 3.1 && < 3.2, pretty >= 1.1 && < 1.2,
                   process >= 1.1, directory >= 1.1, data-default >= 0.4
 
   exposed-modules: System.Console.CmdTheLine,

@@ -21,50 +21,66 @@ infixr 1 ?
 (?) True  = const
 (?) False = flip const
 
-cp :: [String] -> String -> IO ()
-cp sources dest = choosePath =<< doesDirectoryExist dest
+cp :: Bool -> [String] -> String -> IO ()
+cp dry sources dest =
+  choose =<< doesDirectoryExist dest
   where
-  choosePath isDir = 
-    singleton ? singleCopy isDir $
-    not isDir ? notDirErr $
+  choose isDir = 
+    singleFile ? singleCopy isDir $
+    not isDir  ? notDirErr $
     mapM_ copySourcesToDir sources
 
-  singleton = length sources == 1
-
-  withTrailingSep =
-    hasTrailingPathSeparator dest ? dest $ dest ++ sep
+  singleFile = length sources == 1
 
   notDirErr = do
     hPutStrLn stderr $ "cp: target '" ++ dest ++ "' is not a directory"
     exitFailure
 
   notFileErr str = do
-    hPutStrLn stderr $ "cp: '" ++ str ++ "': No such file"
+    hPutStrLn stderr $ "cp: '" ++ str ++ "': no such file"
     exitFailure
 
-  copyToDir filePath =
-    copyFile filePath $ withTrailingSep ++ takeFileName filePath
-
   singleCopy isDir = do
-    choosePath =<< doesFileExist filePath
+    choose =<< doesFileExist filePath
     where
-    choosePath isFile =
+    choose isFile =
       isFile && isDir ? copyToDir filePath $
       isFile          ? copyFile  filePath dest $
       notFileErr filePath
 
-    filePath        = head sources
+    filePath = head sources
 
-  copySourcesToDir filePath = do
-    isFile <- doesFileExist filePath
-    isFile ? copyToDir  filePath
-           $ notFileErr filePath
+  copyToDir filePath = if dry
+    then putStrLn $ concat [ "cp: copying ", filePath, " to ", dest ]
+    else copyFile filePath dest
+    where
+    dest = underDest filePath
 
-cpTerm = cp <$> sources <*> dest
+  underDest filePath = withTrailingSep ++ takeFileName filePath
+    where
+    withTrailingSep = hasTrailingPathSeparator dest ? dest $ dest ++ sep
+
+  copyToFile filePath = if dry
+    then putStrLn $ concat [ "cp: copying ", filePath, " to ", dest ]
+    else copyFile filePath dest
+
+  copySourcesToDir filePath = if dry
+    then return ()
+    else do isFile <- doesFileExist filePath
+            isFile ? copyToDir  filePath
+                   $ notFileErr filePath
+
+cpTerm = cp <$> dry <*> sources <*> dest
   where
+  dry = flag (optInfo [ "dry", "d" ])
+      { argName = "DRY"
+      , argDoc  = "Perform a dry run.  Print what would be copied, but do not "
+               ++ "copy it."
+      }
+
   sources = nonEmpty $ revPosLeft 0 [] posInfo
           { argName = "SOURCES"
-          , argDoc  = "Source file(s) to copy"
+          , argDoc  = "Source file(s) to copy."
           }
 
   dest    = required $ revPos 0 Nothing posInfo
@@ -76,7 +92,7 @@ cpTerm = cp <$> sources <*> dest
 termInfo = def
   { termName = "cp"
   , version  = "v1.0"
-  , termDoc  = "copy files from SOURCES to DEST"
+  , termDoc  = "Copy files from SOURCES to DEST."
   , man      = [ S "BUGS"
                , P "Email bug reports to <portManTwo@example.com>"
                ]

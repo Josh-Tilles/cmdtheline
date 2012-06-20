@@ -132,7 +132,7 @@ morse from mStr = do
 -- Terms
 --
 
--- The heading underwhich to place common options.
+-- The heading under which to place common options.
 comOpts = "COMMON OPTIONS"
 
 -- A modified default 'TermInfo' to be shared by commands.
@@ -159,6 +159,7 @@ input = opt Nothing (optInfo [ "input", "i" ])
       , argSection = comOpts
       }
 
+
 rotTerm = ( rot <$> back <*> n <*> input, termInfo )
   where
   back = flag (optInfo [ "back", "b" ])
@@ -184,7 +185,7 @@ rotTerm = ( rot <$> back <*> n <*> input, termInfo )
 
 morseTerm = ( morse <$> from <*> input, termInfo )
   where
-  from = flag $ (optInfo [ "from", "f" ])
+  from = flag (optInfo [ "from", "f" ])
        { argName   = "FROM"
        , argDoc    = "Convert from morse-code to the Latin alphabet. "
                   ++ "If absent, convert from Latin alphabet to morse-code."
@@ -201,8 +202,8 @@ morseTerm = ( morse <$> from <*> input, termInfo )
   desc = concat
     [ "Converts input gathered from INPUT or standard in to and from morse "
     , "code. 'dah' is represented by '-', 'dit' by '.'.  Each morse character "
-    , "is seperated from the next by one or more ' '.  Morse words are "
-    , "seperated by a '/'."
+    , "is separated from the next by one or more ' '.  Morse words are "
+    , "separated by a '/'."
     ]
 
 
@@ -216,8 +217,6 @@ defaultTerm = ( ret $ const (Left $ HelpFail Pager Nothing) <$> input
     , termDoc       = doc
     }
 
-  doc = "An implementation of the morse-code and rotational(ceaser) ciphers."
+  doc = "An implementation of the morse-code and rotational(Caesar) ciphers."
 
-choices = [ rotTerm, morseTerm ]
-
-main = runChoice defaultTerm [ rotTerm, morseTerm ]
+main = runChoice defaultTerm  [ rotTerm, morseTerm ]

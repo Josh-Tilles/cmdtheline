@@ -17,17 +17,18 @@ import qualified Data.Map as M
 import Data.List     ( sort )
 import Data.Function ( on )
 
+
 optArg :: CmdLine -> ArgInfo -> [( Int, String, Maybe String )]
 optArg cl ai = case M.lookup ai cl of
-  Nothing -> error "ArgInfo passed to optArg does not index CmdLine"
-  Just a  -> case a of
+  Nothing  -> error "ArgInfo passed to optArg does not index CmdLine"
+  Just arg -> case arg of
     Opt opt -> opt
     _       -> error "ArgInfo passed to optArg indexes to positional argument"
 
 posArg :: CmdLine -> ArgInfo -> [String]
 posArg cl ai = case M.lookup ai cl of
-  Nothing -> error "ArgInfo passed to posArg does not index CmdLine"
-  Just a  -> case a of
+  Nothing  -> error "ArgInfo passed to posArg does not index CmdLine"
+  Just arg -> case arg of
     Pos opt -> opt
     _       -> error "ArgInfo passed to posArg indexes to positional argument"
 
@@ -36,18 +37,17 @@ posArg cl ai = case M.lookup ai cl of
  - ArgInfo to an empty list of Arg.
  -}
 argInfoIndexes :: [ArgInfo] -> ( T.Trie ArgInfo, [ArgInfo], CmdLine )
-argInfoIndexes ais = go T.empty [] M.empty ais
+argInfoIndexes ais = foldl go ( T.empty, [], M.empty ) ais
   where
-  go opti posi cl []           = ( opti, posi, cl )
-  go opti posi cl (arg : rest)
-    | isPos arg = go opti
-                     (arg : posi)
-                     (M.insert arg (Pos []) cl)
-                     rest
-    | otherwise = go (foldl add opti $ optNames arg)
-                     posi
-                     (M.insert arg (Opt []) cl)
-                     rest
+  go ( opti, posi, cl ) arg
+    | isPos arg = ( opti
+                  , arg : posi
+                  , M.insert arg (Pos []) cl
+                  )
+    | otherwise = ( foldl add opti $ optNames arg
+                  , posi
+                  , M.insert arg (Opt []) cl
+                  )
       where
       add t name = T.add t name arg
 
@@ -121,12 +121,11 @@ processPosArgs posInfo cl args
   last   = length args - 1
   excess = E.posExcess . map text $ takeEnd (last - maxSpec) args
 
-  ( cl', maxSpec ) = go cl (-1) posInfo
+  ( cl', maxSpec ) = foldl go ( cl, 0 ) posInfo
 
   takeEnd n = reverse . take n . reverse
 
-  go cl maxSpec []         = ( cl, maxSpec )
-  go cl maxSpec (ai : ais) = go cl' maxSpec' ais
+  go ( cl, maxSpec ) ai = ( cl', maxSpec' )
     where
     cl'               = M.insert ai arg cl
     ( arg, maxSpec' ) = case posKind ai of

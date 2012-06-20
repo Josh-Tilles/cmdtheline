@@ -56,17 +56,18 @@ posExcess excess = text "too many arguments, don't know what to do with"
   prep = (<> text ",") . quotes
 
 flagValue f v = hsep
-  [ text "option", quotes f
-  , text "is a flag, it cannot take the argument", quotes v
+  [ text "option", quotes $ text f
+  , text "is a flag, it cannot take the argument", quotes $ text v
   ]
 
-optValueMissing f = hsep [ text "option", quotes f, text "needs an argument" ]
-optParseValue f e = sep [ text "option" <+> (quotes f<>char ':'), e ]
+optValueMissing f = hsep
+  [ text "option", quotes $ text f, text "needs an argument" ]
+optParseValue f e = sep [ text "option" <+> (quotes (text f)<>char ':'), e ]
 optRepeated f f'
-  | show f == show f' = hsep
-    [ text "option", quotes f, text "cannot be repeated" ]
+  | f == f' = hsep
+    [ text "option", quotes $ text f, text "cannot be repeated" ]
   | otherwise         = hsep
-    [ text "options", quotes f, text "and", quotes f'
+    [ text "options", quotes $ text f, text "and", quotes $ text f'
     , text "cannot be present at the same time"
     ]
 

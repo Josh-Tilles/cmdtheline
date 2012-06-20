@@ -33,7 +33,8 @@ import qualified System.Console.CmdTheLine.Trie as T
 import Control.Applicative
 import Text.PrettyPrint
 
-import Data.List ( sort )
+import Data.List     ( sort, sortBy )
+import Data.Function ( on )
 
 argFail :: Doc -> Err a
 argFail = Left . MsgFail
@@ -78,7 +79,7 @@ optInfo names = ArgInfo
     | otherwise   = "OPTIONS"
 
   dash "" =
-    error "System.Console.CmdTheLine.Arg.info recieved empty string as name"
+    error "System.Console.CmdTheLine.Arg.optInfo recieved empty string as name"
 
   dash str@[_] = "-"  ++ str
   dash str     = "--" ++ str
@@ -140,11 +141,11 @@ flag ai =
   yield _ cl = case optArg cl ai of
     []                  -> Right   False
     [( _, _, Nothing )] -> Right   True
-    [( _, f, Just v  )] -> argFail $ E.flagValue (text f) (text v)
+    [( _, f, Just v  )] -> argFail $ E.flagValue f v
 
     (( _, f, _ ) :
      ( _, g, _ ) :
-     _           ) -> argFail $ E.optRepeated (text f) (text g)
+     _           ) -> argFail $ E.optRepeated f g
 
 -- | As 'flag' but may appear an infinity of times. Yields a list of @True@s
 -- as long as the number of times present.
@@ -161,7 +162,7 @@ flagAll ai
 
   truth ( _, f, mv ) = case mv of
     Nothing -> Right   True
-    Just v  -> argFail $ E.flagValue (text f) (text v)
+    Just v  -> argFail $ E.flagValue f v
 
 -- | 'vFlag' @v [ ( v1, ai1 ), ... ]@ is an argument that can be present at most
 -- once on the command line. It takes on the value @vn@ when appearing as
@@ -169,9 +170,9 @@ flagAll ai
 vFlag :: a -> [( a, ArgInfo )] -> Term a
 vFlag v assoc = Term (map flag assoc) yield
   where
-  flag ( _, a )
-    | isPos a   = error E.errNotPos
-    | otherwise = a
+  flag ( _, ai )
+    | isPos ai  = error E.errNotPos
+    | otherwise = ai
 
   yield _ cl = go Nothing assoc
     where
@@ -184,13 +185,13 @@ vFlag v assoc = Term (map flag assoc) yield
 
       [( _, f, Nothing )] -> case mv of
         Nothing       -> go (Just ( f, v )) rest
-        Just ( g, _ ) -> argFail $ E.optRepeated (text g) (text f)
+        Just ( g, _ ) -> argFail $ E.optRepeated g f
 
-      [( _, f, Just v )]  -> argFail $ E.flagValue (text f) (text v)
+      [( _, f, Just v )]  -> argFail $ E.flagValue f v
 
       (( _, f, _ ) :
        ( _, g, _ ) :
-       _           ) -> argFail $ E.optRepeated (text g) (text f)
+       _           ) -> argFail $ E.optRepeated g f
 
 -- | 'vFlagAll' @vs assoc@ is as 'vFlag' except that it can be present an
 -- infinity of times.  In absence, @vs@ is yielded.  When present, each
@@ -198,26 +199,23 @@ vFlag v assoc = Term (map flag assoc) yield
 vFlagAll :: [a] -> [( a, ArgInfo)] -> Term [a]
 vFlagAll vs assoc = Term (map flag assoc) yield
   where
-  flag ( _, a ) 
-    | isPos a   = error E.errNotOpt
-    | otherwise = a { repeatable = True }
+  flag ( _, ai ) 
+    | isPos ai  = error E.errNotOpt
+    | otherwise = ai { repeatable = True }
 
-  yield _ cl = go [] assoc
+  yield _ cl = case assoc of
+    [] -> Right vs
+    _  -> map snd . sortBy (compare `on` fst)
+      <$> foldl addLookup (Right []) assoc
     where
-    go []  [] = Right vs
-    go acc [] = Right . reverse $ map snd acc
-
-    go acc (( mv, a ) : rest) = case optArg cl a of
-      [] -> go acc rest
-      xs -> do
-        acc' <- accumulate xs
-        go acc' rest
+    addLookup acc ( v, ai ) = case optArg cl ai of
+      [] -> acc
+      xs -> (++) <$> mapM flagVal xs <*> acc
       where
-      accumulate assoc = (++ acc) <$> mapM fval assoc
-      fval ( pos, f, mv' ) = case mv' of
-        Nothing -> Right   ( pos, mv )
-        Just v  -> argFail $ E.flagValue (text f) (text v)
-
+      flagVal ( pos, f, mv ) = case mv of
+        Nothing -> Right   ( pos, v )
+        Just v  -> argFail $ E.flagValue f v
+   
 
 --
 -- Options
@@ -225,7 +223,7 @@ vFlagAll vs assoc = Term (map flag assoc) yield
 
 parseOptValue :: ArgVal a => String -> String -> Err a
 parseOptValue f v = case parser v of
-  Left  e -> Left  . UsageFail $ E.optParseValue (text f) e
+  Left  e -> Left  . UsageFail $ E.optParseValue f e
   Right v -> Right v
 
 mkOpt :: ArgVal a => Maybe a -> a -> ArgInfo -> Term a
@@ -243,12 +241,12 @@ mkOpt vopt v ai
       [( _, f, Just v )]  -> parseOptValue f v
 
       [( _, f, Nothing )] -> case vopt of
-        Nothing   -> argFail $ E.optValueMissing (text f)
+        Nothing   -> argFail $ E.optValueMissing f
         Just optv -> Right   optv
 
       (( _, f, _ ) :
        ( _, g, _ ) :
-       _           ) -> argFail $ E.optRepeated (text g) (text f)
+       _           ) -> argFail $ E.optRepeated g f
 
 -- | 'opt' @v ai@ is an optional argument that yields @v@ in absence, or an
 -- assigned value in presence.  If the option is present, but no value is
@@ -275,12 +273,12 @@ mkOptAll vopt vs ai
 
     yield _ cl = case optArg cl ai' of
       [] -> Right vs
-      xs -> map snd . sort <$> mapM parse xs
+      xs -> map snd . sortBy (compare `on` fst) <$> mapM parse xs
 
     parse ( pos, f, mv' ) = case mv' of
       Just v  -> (,) pos <$> parseOptValue f v
       Nothing -> case vopt of
-        Nothing -> argFail $ E.optValueMissing (text f)
+        Nothing -> argFail $ E.optValueMissing f
         Just dv -> Right   ( pos, dv )
 
 -- | 'optAll' @vs ai@ is like 'opt' except that it yields @vs@ in absence and

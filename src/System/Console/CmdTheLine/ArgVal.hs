@@ -6,7 +6,6 @@
 module System.Console.CmdTheLine.ArgVal
   (
   -- * Parsing values from the command line
-  -- $val
     ArgVal(..), ArgParser, ArgPrinter
 
   -- ** Helpers for instantiating ArgVal

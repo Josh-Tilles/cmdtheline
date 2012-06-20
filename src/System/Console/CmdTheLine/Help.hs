@@ -8,7 +8,7 @@ import System.Console.CmdTheLine.Common
 import qualified System.Console.CmdTheLine.Manpage as Man
 
 import Control.Applicative
-import Control.Arrow       ( second )
+import Control.Arrow       ( first, second )
 
 import Data.Char     ( toUpper, toLower )
 import Data.List     ( intersperse, sort, sortBy, partition )
@@ -126,19 +126,19 @@ makeArgLabel ai
   names = sort $ optNames ai
 
   fmtName var = case optKind ai of
-    FlagKind   -> \ n -> concat [ "$(b,", n, ")" ]
+    FlagKind   -> \ name -> concat [ "$(b,", name, ")" ]
     OptKind    -> mkOptMacro
     OptVal   _ -> mkOptValMacro
     where
-    mkOptValMacro n = concat [ "$(b,", n, ")[", sep, "$(i,", var, ")]" ]
+    mkOptValMacro name = concat [ "$(b,", name, ")[", sep, "$(i,", var, ")]" ]
       where
-      sep | length n > 2 = "="
-          | otherwise    = ""
+      sep | length name > 2 = "="
+          | otherwise       = ""
 
-    mkOptMacro n = concat [ "$(b,", n, ")", sep, "$(i,", var, ")" ]
+    mkOptMacro name = concat [ "$(b,", name, ")", sep, "$(i,", var, ")" ]
       where
-      sep | length n > 2 = "="
-          | otherwise    = " "
+      sep | length name > 2 = "="
+          | otherwise       = " "
 
 makeArgItems :: EvalInfo -> [( String, ManBlock )]
 makeArgItems ei = map format xs
@@ -198,54 +198,53 @@ makeCmdItems ei = case evalKind ei of
                        : acc
   label ti = "$(b," ++ termName ti ++ ")"
 
--- Orphans are marked by `Nothing`. Once the algorithm is better understood,
--- perhaps we could move to `Either Orphan NotOrphan`.
-mergeOrphans :: [Maybe ManBlock] -> [( String, Maybe ManBlock )]
-             -> [Maybe ManBlock] -> [Maybe ManBlock]
-mergeOrphans acc orphans blocks = case blocks of
-  Nothing : rest -> mergeOrphans acc'           []      rest
-  mBlock  : rest -> mergeOrphans (mBlock : acc) orphans rest
-  []             -> acc
+mergeOrphans :: ( [( String, Maybe ManBlock )], [Maybe ManBlock] )
+             -> [Maybe ManBlock]
+mergeOrphans ( orphans, blocks ) = fst $ foldl go ( [], orphans ) blocks
   where
-  acc' = case orphans of
-    []           -> acc
-    ( s, _ ) : _ -> merge acc s orphans
-
-  merge acc s []                 = Just (S s) : acc
-  merge acc s ( ( s', i ) : rest)
-    | s == s'   = merge (i : acc)              s  rest
-    | otherwise = merge (i : Just (S s) : acc) s' rest
-
-mergeItems :: [Maybe ManBlock] -> [Maybe ManBlock] -> Bool
-           -> [( String, Maybe ManBlock )] -> [ManBlock]
-           -> ( [Maybe ManBlock], [( String, Maybe ManBlock )] )
-mergeItems acc toInsert mark is blocks = case blocks of
-  sec@(S _) : rest -> transition sec rest
-  t         : rest -> mergeItems (Just t : acc) toInsert mark is rest
-  []              -> ( marked, is )
-  where
-  acc' = toInsert ++ acc
-  marked
-    | mark      = Nothing : acc'
-    | otherwise = acc'
-
-  transition sec@(S str) rest = mergeItems acc'' toInsert'' mark' is' rest
+  go ( acc, orphans ) block = case block of
+    Nothing -> ( acc',         []      )
+    mBlock  -> ( mBlock : acc, orphans )
     where
-    ( toInsert', is' ) = partition ((== str) . fst) is
-    toInsert''         = map snd toInsert'
-    acc''              = Just sec : marked
-    mark'              = str == "DESCRIPTION"
+    acc' = case orphans of
+      []           -> acc
+      ( s, _ ) : _ -> let ( result, s' ) = foldl merge ( acc, s ) orphans
+                      in  Just (S s') : result
+
+  merge ( acc, s ) ( s', i )
+    | s == s'   = ( i : acc,              s  )
+    | otherwise = ( i : Just (S s) : acc, s' )
+
+mergeItems :: [( String, Maybe ManBlock )] -> [ManBlock]
+           -> ( [( String, Maybe ManBlock )], [Maybe ManBlock] )
+mergeItems items blocks = ( items', marked )
+  where
+  ( marked, _, _, items' ) = foldl go ( [Nothing], [], False, items ) blocks
+  
+  -- 'toInsert' is a list of manblocks that belong in the current section.
+  go ( acc, toInsert, mark, items ) block = case block of
+    sec@(S _) -> transition sec
+    t         -> ( Just t : acc, toInsert, mark, items )
+    where
+    transition sec@(S str) = ( acc', toInsert', mark', is' )
+      where
+      ( toInsert', is' ) = first (map snd) $ partition ((== str) . fst) items
+      acc'               = Just sec : marked
+      mark'              = str == "DESCRIPTION"
+
+    marked
+      | mark      = Nothing : acc'
+      | otherwise = acc'
+      where
+      acc' = toInsert ++ acc
 
 text :: EvalInfo -> [ManBlock]
-text ei = catMaybes $ mergeOrphans [] orphans revText
+text ei = catMaybes . mergeOrphans . mergeItems items . man . fst $ term ei
   where
   cmds  = makeCmdItems ei
   args  = makeArgItems ei
-  cmp   = compare `on` fst
-  items = map (second Just) . reverse . sortBy cmp $ cmds ++ args
-
-  ( revText, orphans ) =
-    mergeItems [Nothing] [] False items . man . fst $ term ei
+  cmp   = descCompare `on` fst
+  items = map (second Just) . sortBy cmp $ cmds ++ args
 
 eiSubst ei =
   [ ( "tname", termName . fst $ term ei )

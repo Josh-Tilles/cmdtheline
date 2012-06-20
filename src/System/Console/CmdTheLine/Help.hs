@@ -198,28 +198,26 @@ makeCmdItems ei = case evalKind ei of
                        : acc
   label ti = "$(b," ++ termName ti ++ ")"
 
-mergeOrphans :: ( [( String, Maybe ManBlock )], [Maybe ManBlock] )
-             -> [Maybe ManBlock]
-mergeOrphans ( orphans, blocks ) = fst $ foldl go ( [], orphans ) blocks
+mergeOrphans :: ( [( String, ManBlock )], [Maybe ManBlock] ) -> [ManBlock]
+mergeOrphans ( orphans, marked ) = fst $ foldl go ( [], orphans ) marked
   where
-  go ( acc, orphans ) block = case block of
-    Nothing -> ( acc',         []      )
-    mBlock  -> ( mBlock : acc, orphans )
+  go ( acc, orphans ) (Just block) = ( block : acc, orphans )
+  go ( acc, orphans ) Nothing      = ( acc',        []      )    
     where
     acc' = case orphans of
       []           -> acc
       ( s, _ ) : _ -> let ( result, s' ) = foldl merge ( acc, s ) orphans
-                      in  Just (S s') : result
+                      in  S s' : result
 
-  merge ( acc, s ) ( s', i )
-    | s == s'   = ( i : acc,              s  )
-    | otherwise = ( i : Just (S s) : acc, s' )
+  merge ( acc, secName ) ( secName', item )
+    | secName == secName' = ( item : acc,             secName  )
+    | otherwise           = ( item : S secName : acc, secName' )
 
-mergeItems :: [( String, Maybe ManBlock )] -> [ManBlock]
-           -> ( [( String, Maybe ManBlock )], [Maybe ManBlock] )
-mergeItems items blocks = ( items', marked )
+mergeItems :: [( String, ManBlock )] -> [ManBlock]
+           -> ( [( String, ManBlock )], [Maybe ManBlock] )
+mergeItems items blocks = ( orphans, marked )
   where
-  ( marked, _, _, items' ) = foldl go ( [Nothing], [], False, items ) blocks
+  ( marked, _, _, orphans ) = foldl go ( [Nothing], [], False, items ) blocks
   
   -- 'toInsert' is a list of manblocks that belong in the current section.
   go ( acc, toInsert, mark, items ) block = case block of
@@ -236,15 +234,15 @@ mergeItems items blocks = ( items', marked )
       | mark      = Nothing : acc'
       | otherwise = acc'
       where
-      acc' = toInsert ++ acc
+      acc' = map Just toInsert ++ acc
 
 text :: EvalInfo -> [ManBlock]
-text ei = catMaybes . mergeOrphans . mergeItems items . man . fst $ term ei
+text ei = mergeOrphans . mergeItems items . man . fst $ term ei
   where
   cmds  = makeCmdItems ei
   args  = makeArgItems ei
   cmp   = descCompare `on` fst
-  items = map (second Just) . sortBy cmp $ cmds ++ args
+  items = sortBy cmp $ cmds ++ args
 
 eiSubst ei =
   [ ( "tname", termName . fst $ term ei )

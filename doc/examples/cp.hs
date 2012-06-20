@@ -44,8 +44,8 @@ cp dry sources dest =
     choose =<< doesFileExist filePath
     where
     choose isFile =
-      isFile && isDir ? copyToDir filePath $
-      isFile          ? copyFile  filePath dest $
+      isFile && isDir ? copyToDir  filePath $
+      isFile          ? copyToFile filePath $
       notFileErr filePath
 
     filePath = head sources

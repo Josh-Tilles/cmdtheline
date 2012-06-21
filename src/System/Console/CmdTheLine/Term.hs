@@ -211,7 +211,7 @@ chooseTermEi mainTerm choices = EvalInfo command command eiChoices
 --
 
 -- | 'eval' @args ( term, termInfo )@ allows the user to pass @args@ directly to
--- the evaluation mechanism.  This is usefull if some kind of pre-processing is
+-- the evaluation mechanism.  This is useful if some kind of pre-processing is
 -- required.  If you do not need to pre-process command line arguments, use one
 -- of 'exec' or 'run'.  On failure the program exits.
 eval :: [String] -> ( Term a, TermInfo ) -> IO a
@@ -222,8 +222,8 @@ eval args termPair@( term, _ ) = evalTerm ei yield args
   ei = EvalInfo command command []
 
 -- | 'exec' @( term, termInfo )@ executes a command line program, directly
--- grabing the command line arguments and returning the result upon succesfull
--- evaluation of @term@.  On failure the program exits.
+-- grabbing the command line arguments from the environment and returning the
+-- result upon successful evaluation of @term@.  On failure the program exits.
 exec :: ( Term a, TermInfo ) -> IO a
 exec term = do
   args <- getArgs
@@ -237,7 +237,7 @@ run term = do
   action <- exec term
   action
 
--- | 'evalChoice' @args mainTerm choices@ is analagous to 'eval', but for
+-- | 'evalChoice' @args mainTerm choices@ is analogous to 'eval', but for
 -- programs that provide a choice of commands.
 evalChoice :: [String] -> ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a
 evalChoice args mainTerm@( term, termInfo ) choices = do
@@ -258,13 +258,13 @@ evalChoice args mainTerm@( term, termInfo ) choices = do
   handleErr e = do printEvalErr (chooseTermEi mainTerm choices) e
                    exitFailure
 
--- | Analagous to 'exec', but for programs that provide a choice of commands.
+-- | Analogous to 'exec', but for programs that provide a choice of commands.
 execChoice :: ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a
 execChoice main choices = do
   args <- getArgs
   evalChoice args main choices
 
--- | Analagous to 'run', but for programs that provide a choice of commands.
+-- | Analogous to 'run', but for programs that provide a choice of commands.
 runChoice :: ( Term (IO a), TermInfo ) -> [( Term (IO a), TermInfo )] -> IO a
 runChoice main choices = do
   action <- execChoice main choices

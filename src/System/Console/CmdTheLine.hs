@@ -113,7 +113,7 @@ import Control.Monad    ( join )
 
   We can now turn any of these functions into a @Term String@ by lifting into
   'Term' and passing the result to 'ret' to fold the 'Err' monad into the
-  library.  Here is an example ofwhat it might look like to do this with @noCmd@.
+  library.  Here is an example of what it might look like to do this with @noCmd@.
 
 > noCmdTerm :: Term (Err String)
 > noCmdTerm = pure noCmd

@@ -24,7 +24,7 @@ see the [Hackage repo](http://hackage.haskell.org/package/cmdtheline).
 Bugs
 ----
 Please report bugs to the
-[issue tracker](http://github.com/eli-frey/cmdthline/issues).
+[issue tracker](http://github.com/eli-frey/cmdtheline/issues).
 
 LICENSE
 -------

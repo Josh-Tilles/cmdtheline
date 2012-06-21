@@ -87,7 +87,7 @@ isPos ai = optNames ai == []
 
   * $(i,text): italicizes @text@.
 
-  * $(b,tesxt): bolds @text@.
+  * $(b,text): bolds @text@.
 
   * $(mname): evaluates to the name of the default term if there are choices
     of commands, or the only term otherwise.
@@ -113,7 +113,7 @@ type Title = ( String, Int, String, String, String )
 
 type Page = ( Title, [ManBlock] )
 
--- | Information about a 'Term'.  It is recomended that 'TermInfo's be
+-- | Information about a 'Term'.  It is recommended that 'TermInfo's be
 -- created by customizing the 'Data.Default' instance, as in
 --
 -- > termInfo = def

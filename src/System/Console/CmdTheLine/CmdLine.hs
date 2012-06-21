@@ -8,6 +8,9 @@ module System.Console.CmdTheLine.CmdLine
 import System.Console.CmdTheLine.Common
 import System.Console.CmdTheLine.Err as E
 
+import Control.Applicative
+import Control.Arrow ( second )
+
 import Text.PrettyPrint
 import Text.Parsec as P
 
@@ -37,91 +40,98 @@ posArg cl ai = case M.lookup ai cl of
  - ArgInfo to an empty list of Arg.
  -}
 argInfoIndexes :: [ArgInfo] -> ( T.Trie ArgInfo, [ArgInfo], CmdLine )
-argInfoIndexes ais = foldl go ( T.empty, [], M.empty ) ais
+argInfoIndexes = foldl go ( T.empty, [], M.empty )
   where
-  go ( opti, posi, cl ) arg
-    | isPos arg = ( opti
-                  , arg : posi
-                  , M.insert arg (Pos []) cl
+  go ( optTrie, posAis, cl ) ai
+    | isPos ai  = ( optTrie
+                  , ai : posAis
+                  , M.insert ai (Pos []) cl
                   )
-    | otherwise = ( foldl add opti $ optNames arg
-                  , posi
-                  , M.insert arg (Opt []) cl
+    | otherwise = ( foldl add optTrie $ optNames ai
+                  , posAis
+                  , M.insert ai (Opt []) cl
                   )
-      where
-      add t name = T.add t name arg
+    where
+    add t name = T.add t name ai
 
 parseOptArg :: String -> ( String, Maybe String )
 parseOptArg str
+  -- 'str' is a short name.
   | str !! 1 /= '-' =
     if length str == 2
-       then ( str,        Nothing )
-       else ( take 2 str, Just $ drop 2 str )
+       then ( str,        Nothing )           -- No glued argument.
+       else ( take 2 str, Just $ drop 2 str ) -- Glued argument.
 
+  -- 'str' is a long name.
   | otherwise       = case P.parse assignment "" str of
-    Left _       -> ( str, Nothing )
-    Right result -> result
+    Left _       -> ( str, Nothing ) --  No glued argument
+    Right result -> result           --  Glued argument
     where
     assignment = do
       label <- P.many1 $ P.satisfy (/= '=')
       value <- optionMaybe $ P.char '=' >> P.many1 P.anyChar
       return ( label, value )
 
-{- Returns an updated CmdLine according to the options found in `args`
- - with the trie index `opti`.  Positional arguments are returned in order.
+{- Returns an updated CmdLine according to the options found in 'args'
+ - with the trie index 'optTrie'.  Positional arguments are returned in order.
  -}
 parseArgs :: T.Trie ArgInfo -> CmdLine -> [String]
           -> Err ( CmdLine, [String] )
-parseArgs opti cl args = go 1 opti cl [] args
+parseArgs optTrie cl args = second (reverse . (++ rest)) <$> go 1 cl [] args
   where
-  go k opti cl pargs args = case args of
-    []            -> Right ( cl, reverse pargs)
-    ("--" : rest) -> Right ( cl, reverse $ pargs ++ rest )
-
-    (str : rest)  ->
-      if not $ isOpt str
-         then go (k + 1) opti cl (str : pargs) rest
-         else consume str rest
+  -- Everything after '"--"' is a position argument.
+  ( args', rest ) = splitOn "--" args
+  go k cl posArgs args = case args of
+    []         -> Right ( cl, posArgs )
+    str : rest ->
+      if isOpt str
+         then asignOptValue str rest
+         else go (k + 1) cl (str : posArgs) rest
     where
     isOpt str = length str > 1 && head str == '-'
 
-    consume str args = case T.lookup name opti of
-      Left  T.NotFound  -> Left $ UsageFail unknown
-      Left  T.Ambiguous -> Left $ UsageFail ambiguous
-      Right ai          -> result ai
+    asignOptValue str rest = either handleErr addOpt $ T.lookup name optTrie
       where
+      ( name, value ) = parseOptArg str
+
+      addOpt ai = go (k + 1) cl' posArgs rest'
+        where
+        cl'     = M.insert ai optArgs cl
+        optArgs = Opt $ ( k, name, value' ) : optArg cl ai
+
+        ( value', rest' )
+          -- If the next string can't be assigned to this argument, don't
+          -- skip it.
+          | value /= Nothing || optKind ai == FlagKind ||
+            rest == []       || isOpt (head rest)      = ( value, rest )
+          -- Else the next string is the value of this argument, consume it.
+          | otherwise                                  = ( Just $ head rest
+                                                         , tail rest
+                                                         )
+
+      handleErr T.NotFound  = Left $ UsageFail unknown
+      handleErr T.Ambiguous = Left $ UsageFail ambiguous
+
       unknown   = E.unknown   "option" name
       ambiguous = E.ambiguous "option" name ambs
         where
-        ambs = sort $ T.ambiguities opti name
+        ambs = sort $ T.ambiguities optTrie name
 
-      ( name, value ) = parseOptArg str
-
-      result ai = go (k + 1) opti (M.insert ai arg' cl) pargs args'
-        where
-        arg' = Opt $ ( k, name, value' ) : optArg cl ai
-
-        ( value', args' )
-          | value /= Nothing || optKind ai == FlagKind ||
-            args == []       || isOpt (head args)      = ( value, args )
-          | otherwise                                  = ( Just $ head args
-                                                         , tail args
-                                                         )
 
 {- Returns an updated CmdLine in which each positional arg mentioned in the
- - list index `posInfo`, is given a value according to the list of positional
- - argument values `args`.
+ - list index 'posInfo', is given a value according to the list of positional
+ - argument values 'args'.
  -}
-processPosArgs :: [ArgInfo] -> CmdLine -> [String] -> Err CmdLine
-processPosArgs _       cl []   = Right cl
-processPosArgs posInfo cl args
+processPosArgs :: [ArgInfo] -> ( CmdLine, [String] ) -> Err CmdLine
+processPosArgs _       ( cl, [] ) = Right cl
+processPosArgs posInfo ( cl, args )
   | last <= maxSpec = Right cl'
   | otherwise       = Left  $ UsageFail excess
   where
   last   = length args - 1
   excess = E.posExcess . map text $ takeEnd (last - maxSpec) args
 
-  ( cl', maxSpec ) = foldl go ( cl, 0 ) posInfo
+  ( cl', maxSpec ) = foldl go ( cl, -1 ) posInfo
 
   takeEnd n = reverse . take n . reverse
 
@@ -142,13 +152,11 @@ processPosArgs posInfo cl args
                                     , maxSpec''
                                     )
       where
-      cmp       = if maxIsLast then (>=)       else (>)
       pos'      = if rev       then last - pos else pos
+      cmp       = if maxIsLast then (>=)       else (>)
       maxSpec'' = if maxIsLast then last       else max pos' maxSpec
 
 create :: [ArgInfo] -> [String] -> Err CmdLine
-create ais args = do
-  ( cl', pargs ) <- parseArgs opti cl args
-  processPosArgs posi cl' pargs
+create ais args = processPosArgs posAis =<< parseArgs optTrie cl args
   where
-  ( opti, posi, cl ) = argInfoIndexes ais
+  ( optTrie, posAis, cl ) = argInfoIndexes ais

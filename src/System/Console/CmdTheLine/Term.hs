@@ -63,7 +63,7 @@ printEvalErr ei fail = case fail of
   Help fmt mName -> either print (H.print fmt stdout) (eEi mName)
   where
   -- Either we are in the default term, or the commands name is in `mName`.
-  eEi = maybe (Right ei) process
+  eEi = maybe (Right ei { term = main ei }) process
 
   -- Either the command name exists, or else it does not and we're in trouble.
   process name = do

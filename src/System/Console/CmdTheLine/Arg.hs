@@ -36,6 +36,7 @@ import Text.PrettyPrint
 import Data.List     ( sort, sortBy )
 import Data.Function ( on )
 
+
 argFail :: Doc -> Err a
 argFail = Left . MsgFail
 
@@ -203,10 +204,11 @@ vFlagAll vs assoc = Term (map flag assoc) yield
     | isPos ai  = error E.errNotOpt
     | otherwise = ai { repeatable = True }
 
-  yield _ cl = case assoc of
-    [] -> Right vs
-    _  -> map snd . sortBy (compare `on` fst)
-      <$> foldl addLookup (Right []) assoc
+  yield _ cl = do
+    result <- foldl addLookup (Right []) assoc
+    case result of
+      [] -> return vs
+      _  -> return . map snd $ sortBy (compare `on` fst) result
     where
     addLookup acc ( v, ai ) = case optArg cl ai of
       [] -> acc

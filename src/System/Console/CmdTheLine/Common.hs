@@ -10,9 +10,6 @@ import Text.PrettyPrint ( Doc )
 
 import qualified Data.Map as M
 
--- | The format to print help in.
-data HelpFormat = Pager | Plain | Groff
-
 data Absence = Absent
              | Present String
                deriving ( Eq )
@@ -68,7 +65,9 @@ instance Ord ArgInfo where
   compare ai ai'
     | isPos ai && isPos ai' = (compare `on` posKind) ai ai'
     | isOpt ai && isOpt ai' = (compare `on` optNames) ai ai'
+    | isOpt ai && isPos ai' = LT
     | otherwise             = GT
+
 
 data Arg = Opt [( Int          -- The position were the argument was found.
                 , String       -- The name by which the argument was supplied.
@@ -168,6 +167,9 @@ data EvalKind = Simple   -- The program has no commands.
               | Main     -- The default program is running.
               | Choice   -- A command has been chosen.
 
+-- | The format to print help in.
+data HelpFormat = Pager | Plain | Groff
+
 data Fail =
           -- | An arbitrary message to be printed on failure.
             MsgFail   Doc
@@ -198,3 +200,8 @@ evalKind ei
 
 descCompare :: Ord a => a -> a -> Ordering
 descCompare = flip compare
+
+splitOn sep xs = ( left, rest' )
+  where
+  rest' = if rest == [] then rest else tail rest -- Skip the 'sep'.
+  ( left, rest ) = span (/= sep) xs

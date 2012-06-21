@@ -41,7 +41,7 @@ add t k v = go t k (length k) 0 v (Pre v {- Allocate less. -})
     where
     newVal = case val t of
       Amb       -> Amb
-      (Pre _)   -> Amb
+      Pre _     -> Amb
       v@(Key _) -> v
       Nil       -> preV
 
@@ -62,26 +62,26 @@ findNode k t = go t k (length k) 0
 
 lookup :: String -> Trie a -> Either LookupFail a
 lookup k t = case findNode k t of
-  Nothing  -> Left NotFound
-  (Just t') -> case val t' of
-    (Key v) -> Right v
-    (Pre v) -> Right v
-    Amb     -> Left  Ambiguous
-    Nil     -> Left  NotFound
+  Nothing -> Left NotFound
+  Just t' -> case val t' of
+    Key v -> Right v
+    Pre v -> Right v
+    Amb   -> Left  Ambiguous
+    Nil   -> Left  NotFound
 
 ambiguities :: Trie a -> String -> [String]
 ambiguities t pre = case findNode pre t of
-  Nothing   -> []
-  (Just t') -> case val t' of
+  Nothing -> []
+  Just t' -> case val t' of
     Amb -> go [] pre $ M.toList (succs t') : []
     _   -> []
 
   where
   go acc pre assocs = case assocs of
-    []          -> error "saw lone empty list while searching for ambiguities"
-    [[]]        -> acc
-    ([] : rest) -> go acc (init pre) rest
-    _           -> descend assocs
+    []        -> error "saw lone empty list while searching for ambiguities"
+    [[]]      -> acc
+    [] : rest -> go acc (init pre) rest
+    _         -> descend assocs
     where
     descend ((top : bottom) : rest) = go acc' pre' assocs'
       where
@@ -91,9 +91,9 @@ ambiguities t pre = case findNode pre t of
 
       pre'       = pre ++ return c
       acc'       = case val t'' of
-        (Key _) -> pre' : acc
-        Nil     -> error "saw Nil on descent"
-        _       -> acc
+        Key _ -> pre' : acc
+        Nil   -> error "saw Nil on descent"
+        _     -> acc
 
 fromList :: [( String, a )] -> Trie a
 fromList assoc = foldl consume empty assoc

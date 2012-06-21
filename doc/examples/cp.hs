@@ -11,7 +11,7 @@ import System.FilePath  ( takeFileName
                         )
 
 import System.IO
-import System.Exit
+import System.Exit ( exitFailure )
 
 sep = [pathSeparator]
 
@@ -23,15 +23,16 @@ infixr 1 ?
 
 cp :: Bool -> [String] -> String -> IO ()
 cp dry sources dest =
-  choose =<< doesDirectoryExist dest
+  chooseTactic =<< doesDirectoryExist dest
   where
-  choose isDir = 
+  chooseTactic isDir = 
     singleFile ? singleCopy isDir $
     not isDir  ? notDirErr $
     mapM_ copySourcesToDir sources
 
   singleFile = length sources == 1
 
+  -- Errors
   notDirErr = do
     hPutStrLn stderr $ "cp: target '" ++ dest ++ "' is not a directory"
     exitFailure
@@ -40,6 +41,7 @@ cp dry sources dest =
     hPutStrLn stderr $ "cp: '" ++ str ++ "': no such file"
     exitFailure
 
+  -- Tactics
   singleCopy isDir = do
     choose =<< doesFileExist filePath
     where
@@ -50,26 +52,25 @@ cp dry sources dest =
 
     filePath = head sources
 
-  copyToDir filePath = if dry
-    then putStrLn $ concat [ "cp: copying ", filePath, " to ", dest ]
-    else copyFile filePath dest
-    where
-    dest = underDest filePath
+  copySourcesToDir filePath = do
+    isFile <- doesFileExist filePath
+    isFile ? copyToDir  filePath
+           $ notFileErr filePath
 
-  underDest filePath = withTrailingSep ++ takeFileName filePath
+  -- File copying
+  copyToDir filePath = if dry
+    then putStrLn $ concat [ "cp: copying ", filePath, " to ", dest' ]
+    else copyFile filePath dest'
     where
+    dest'           = withTrailingSep ++ takeFileName filePath
     withTrailingSep = hasTrailingPathSeparator dest ? dest $ dest ++ sep
 
   copyToFile filePath = if dry
     then putStrLn $ concat [ "cp: copying ", filePath, " to ", dest ]
     else copyFile filePath dest
 
-  copySourcesToDir filePath = if dry
-    then return ()
-    else do isFile <- doesFileExist filePath
-            isFile ? copyToDir  filePath
-                   $ notFileErr filePath
 
+-- An example of using the 'rev' and 'Left' variants of 'pos'.
 cpTerm = cp <$> dry <*> sources <*> dest
   where
   dry = flag (optInfo [ "dry", "d" ])

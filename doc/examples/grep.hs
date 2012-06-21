@@ -10,6 +10,7 @@ grep :: String -> [String] -> IO ()
 grep pattern dests = do
   exitWith =<< system (concat . intersperse " " $ [ "grep", pattern ] ++ dests)
 
+-- An example of using the 'pos' and 'posRight' Terms.
 grepTerm = ( grep <$> pattern <*> files, termInfo )
   where
   pattern  = required $ pos 0 Nothing posInfo { argName = "PATTERN" }

@@ -60,12 +60,11 @@ synopsis ei = case evalKind ei of
   where
   args = concat . intersperse " " $ map snd args'
     where
-    args' = sortBy revCmp . formatPos [] . snd $ term ei
+    args' = sortBy revCmp . foldl formatPos [] . snd $ term ei
 
-  formatPos acc [] = acc
-  formatPos acc (ai : ais)
-    | isOpt ai  = formatPos acc ais
-    | otherwise = formatPos (( posKind ai, v'' ) : acc) ais
+  formatPos acc ai
+    | isOpt ai  = acc
+    | otherwise = ( posKind ai, v'' ) : acc
     where
     v | argName ai == "" = "$(i,ARG)"
       | otherwise        = concat [ "$(i,", argName ai, ")" ]
@@ -147,11 +146,10 @@ makeArgItems ei = map format xs
 
   isArgItem ai = not $ isPos ai && (argName ai == "" || argDoc ai == "")
 
-  revCmp ai' ai
-    | c /= EQ   = c
-    | otherwise = compare' ai ai'
+  revCmp ai' ai = if secCmp /= EQ then secCmp else compare' ai ai'
     where
-    c        = (compare `on` argSection) ai ai'
+    secCmp = (compare `on` argSection) ai ai'
+
     compare' = case ( isOpt ai, isOpt ai' ) of
       ( True,  True  ) -> compare `on` key . optNames
       ( False, False ) -> compare `on` map toLower . argName
@@ -230,9 +228,7 @@ mergeItems items blocks = ( orphans, marked )
       acc'               = Just sec : marked
       mark'              = str == "DESCRIPTION"
 
-    marked
-      | mark      = Nothing : acc'
-      | otherwise = acc'
+    marked = if mark then Nothing : acc' else acc'
       where
       acc' = map Just toInsert ++ acc
 

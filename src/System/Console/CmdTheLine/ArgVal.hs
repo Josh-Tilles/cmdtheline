@@ -22,6 +22,7 @@ module System.Console.CmdTheLine.ArgVal
   , quintuple, quintuplePP
   ) where
 
+import System.Console.CmdTheLine.Common ( splitOn )
 import qualified System.Console.CmdTheLine.Err as E
 import qualified System.Console.CmdTheLine.Trie as T
 
@@ -50,11 +51,6 @@ pInteger  :: ( Read a, Integral a ) => Parsec String () a
 pFloating :: ( Read a, Floating a ) => Parsec String () a
 pInteger      = read <$> concatParsers [ sign, digits ]
 pFloating     = read <$> concatParsers [ sign, digits, decPoint, digits ]
-
-splitOn sep str = ( left, rest' )
-  where
-  rest' = if rest == [] then rest else tail rest -- Skip the 'sep'.
-  ( left, rest ) = span (/= sep) str
 
 -- | 'fromParsec' @onErr p@ makes an 'ArgParser' from @p@ using @onErr@ to
 -- produce meaningful error messages.  On failure, @onErr@ will receive a

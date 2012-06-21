@@ -26,7 +26,7 @@ Category:      Console
 Cabal-version: >=1.6
 Build-type:    Simple
 
-Extra-source-files: doc/examples/*.hs
+Extra-source-files: doc/examples/*.hs, README.md
 
 Source-repository head
   type:     git

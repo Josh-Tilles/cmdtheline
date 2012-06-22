@@ -39,7 +39,7 @@ notDir  s = quotes (s) <+> text "is not a directory"
 
 isDir   s = quotes (s) <+> text "is a directory"
 
-element kind str exp = sep
+element kind str exp = fsep
   [ text "invalid element in", text kind, parens . quotes $ text str, exp ]
 
 sepMiss sep str = invalidVal (text str) $

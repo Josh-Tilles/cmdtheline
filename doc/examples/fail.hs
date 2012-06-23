@@ -28,7 +28,7 @@ noCmd :: Err String
 noCmd = helpFail Pager Nothing
 
 
-def' = def
+def' = defTI
   { stdOptSection = "COMMON OPTIONS"
   , man =
       [ S "COMMON OPTIONS"

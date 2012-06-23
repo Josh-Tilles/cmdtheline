@@ -30,7 +30,6 @@ import Control.Arrow ( first, (***) )
 import Data.Function ( on )
 import Data.List     ( sort, unfoldr )
 import Data.Ratio    ( Ratio )
-import Data.Default
 
 import Control.Applicative hiding ( (<|>), empty )
 import Text.Parsec         hiding ( char )

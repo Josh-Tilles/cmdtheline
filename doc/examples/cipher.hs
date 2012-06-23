@@ -1,6 +1,5 @@
 import System.Console.CmdTheLine
 import Control.Applicative
-import Data.Default
 
 import Data.Char ( isUpper, isAlpha, isAlphaNum, isSpace
                  , toLower
@@ -137,7 +136,7 @@ comOpts = "COMMON OPTIONS"
 
 -- A modified default 'TermInfo' to be shared by commands.
 def' :: TermInfo
-def' = def
+def' = defTI
   { man =
       [ S comOpts
       , P "These options are common to all commands."

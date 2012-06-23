@@ -90,7 +90,7 @@ cpTerm = cp <$> dry <*> sources <*> dest
                    ++ "is more than one $(i,SOURCE)."
           }
 
-termInfo = def
+termInfo = defTI
   { termName = "cp"
   , version  = "v1.0"
   , termDoc  = "Copy files from SOURCES to DEST."

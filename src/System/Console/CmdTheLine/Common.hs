@@ -4,7 +4,6 @@
  -}
 module System.Console.CmdTheLine.Common where
 
-import Data.Default
 import Data.Function    ( on )
 import Text.PrettyPrint ( Doc )
 
@@ -114,9 +113,9 @@ type Title = ( String, Int, String, String, String )
 type Page = ( Title, [ManBlock] )
 
 -- | Information about a 'Term'.  It is recommended that 'TermInfo's be
--- created by customizing the 'Data.Default' instance, as in
+-- created by customizing 'defTI', as in
 --
--- > termInfo = def
+-- > termInfo = defTI
 -- >   { termName = "caroline-no"
 -- >   , termDoc  = "carry a line off"
 -- >   }
@@ -145,15 +144,15 @@ data TermInfo = TermInfo
   , man           :: [ManBlock]
   } deriving ( Eq )
 
-instance Default TermInfo where
-  def = TermInfo
-    { termName      = ""
-    , version       = ""
-    , termDoc       = ""
-    , termSection   = "COMMANDS"
-    , stdOptSection = "OPTIONS"
-    , man           = []
-    }
+-- | A default 'TermInfo'.
+defTI = TermInfo
+  { termName      = ""
+  , version       = ""
+  , termDoc       = ""
+  , termSection   = "COMMANDS"
+  , stdOptSection = "OPTIONS"
+  , man           = []
+  }
 
 type Command = ( TermInfo, [ArgInfo] )
 

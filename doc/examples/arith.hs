@@ -176,7 +176,7 @@ arithTerm = ( arith <$> pp <*> env <*> e, ti )
     , argDoc  = "An arithmetic expression to be evaluated."
     }
 
-  ti = def
+  ti = defTI
      { termName = "arith"
      , version  = "0.3"
      , termDoc  = "Evaluate mathematical functions demonstrating precedence "

@@ -15,7 +15,7 @@ grepTerm = ( grep <$> pattern <*> files, termInfo )
   where
   pattern  = required $ pos 0 Nothing posInfo { argName = "PATTERN" }
   files    = posRight 0 [] posInfo { argName = "FILE"    }
-  termInfo = def
+  termInfo = defTI
     { termName = "grep"
     , version  = "2.5"
     , termDoc  = "Search for PATTERN in FILE(s) or standard in."

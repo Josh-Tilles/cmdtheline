@@ -20,7 +20,7 @@ term :: Term (IO ())
 term = hello <$> silent <*> greeted
 
 termInfo :: TermInfo
-termInfo = def { termName = "Hello", version = "1.0" }
+termInfo = defTI { termName = "Hello", version = "1.0" }
 
 main :: IO ()
 main = run ( term, termInfo )

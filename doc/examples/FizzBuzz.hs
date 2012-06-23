@@ -57,7 +57,7 @@ term :: Term (IO ())
 term = fizzBuzz <$> verbosity <*> fizz <*> buzz <*> times
 
 termInfo :: TermInfo
-termInfo = def
+termInfo = defTI
   { termName = "FizzBuzz"
   , version  = "v1.0"
   , termDoc  = "An implementation of the world renowned FizzBuzz algorithm."

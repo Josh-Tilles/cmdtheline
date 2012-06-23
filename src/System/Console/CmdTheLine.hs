@@ -11,7 +11,7 @@ module System.Console.CmdTheLine
   -- $term
   , Term()
   , TermInfo(..)
-  , Default(..)
+  , defTI
 
   -- * Manpages
   , ManBlock(..)
@@ -27,7 +27,6 @@ module System.Console.CmdTheLine
   )
   where
 
-import Data.Default
 import System.Console.CmdTheLine.Common
 import System.Console.CmdTheLine.Term
 import System.Console.CmdTheLine.Arg
@@ -64,7 +63,7 @@ import Control.Monad    ( join )
 > term = hello <$> silent <*> greeted
 > 
 > termInfo :: TermInfo
-> termInfo = def { termName = "Hello", version = "1.0" }
+> termInfo = defTI { termName = "Hello", version = "1.0" }
 > 
 > main :: IO ()
 > main = run ( term, termInfo )

@@ -57,7 +57,7 @@ import Control.Monad    ( join )
 >      else putStrLn $ "Hello, " ++ str ++ "!"
 >
 > term :: Term (IO ())
-> term = foo <$> silent <*> greeted
+> term = hello <$> silent <*> greeted
 > 
 > termInfo :: TermInfo
 > termInfo = def { termName = "Hello", version = "1.0" }

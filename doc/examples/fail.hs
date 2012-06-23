@@ -13,19 +13,19 @@ import Data.List ( intersperse )
 cmdNames = [ "msg", "usage", "help", "success" ]
 
 failMsg, failUsage, success :: [String] -> Err String
-failMsg   strs = Left  . MsgFail   . fsep $ map text strs
-failUsage strs = Left  . UsageFail . fsep $ map text strs
-success   strs = Right . concat $ intersperse " " strs
+failMsg   strs = msgFail   . fsep $ map text strs
+failUsage strs = usageFail . fsep $ map text strs
+success   strs = return . concat $ intersperse " " strs
 
 help :: String -> Err String
 help name
-  | any (== name) cmdNames = Left . HelpFail Pager $ Just name
-  | name == ""             = Left $ HelpFail Pager Nothing
+  | any (== name) cmdNames = helpFail Pager $ Just name
+  | name == ""             = helpFail Pager Nothing
   | otherwise              =
-    Left . UsageFail $ quotes (text name) <+> text "is not the name of a command"
+    usageFail $ quotes (text name) <+> text "is not the name of a command"
 
 noCmd :: Err String
-noCmd = Left $ HelpFail Pager Nothing
+noCmd = helpFail Pager Nothing
 
 
 def' = def

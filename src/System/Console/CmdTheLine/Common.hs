@@ -170,16 +170,8 @@ data EvalKind = Simple   -- The program has no commands.
 -- | The format to print help in.
 data HelpFormat = Pager | Plain | Groff
 
-data Fail =
-          -- | An arbitrary message to be printed on failure.
-            MsgFail   Doc
-
-          -- | A message to be printed along with the usage on failure.
+data Fail = MsgFail   Doc
           | UsageFail Doc
-
-          -- | A format to print the help in and an optional name of the term
-          -- to print help for.  If 'Nothing' is supplied, help will be printed
-          -- for the currently evaluating term.
           | HelpFail  HelpFormat (Maybe String)
 
 -- | A monad for values in the context of possibly failing with a helpful

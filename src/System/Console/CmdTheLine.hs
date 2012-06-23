@@ -21,7 +21,9 @@ module System.Console.CmdTheLine
 
   -- * User error reporting
   -- $err
-  , Fail(..), HelpFormat(..), Err, ret
+  , Fail(), HelpFormat(..), Err
+  , msgFail, usageFail, helpFail
+  , ret
   )
   where
 
@@ -30,6 +32,8 @@ import System.Console.CmdTheLine.Common
 import System.Console.CmdTheLine.Term
 import System.Console.CmdTheLine.Arg
 import System.Console.CmdTheLine.ArgVal
+
+import Text.PrettyPrint ( Doc )
 
 import Control.Monad    ( join )
 
@@ -121,6 +125,20 @@ import Control.Monad    ( join )
 > prepedNoCmdTerm :: Term String
 > prepedNoCmdTerm = ret noCmdTerm
 -}
+
+-- | Fail with an arbitrary message on failure.
+msgFail :: Doc -> Err a
+msgFail = Left . MsgFail
+
+-- | Fail with a message along with the usage on failure.
+usageFail :: Doc -> Err a
+usageFail = Left. UsageFail
+
+-- | A format to print the help in and an optional name of the term to print
+-- help for.  If 'Nothing' is supplied, help will be printed for the currently
+-- evaluating term.
+helpFail :: HelpFormat -> Maybe String -> Err a
+helpFail fmt = Left . HelpFail fmt
 
 -- | 'ret' @term@ folds @term@'s 'Err' context into the library to be handled
 -- internally and as seamlessly as other error messages that are built in.

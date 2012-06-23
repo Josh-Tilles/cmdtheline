@@ -151,14 +151,14 @@ ppBin b = case b of
   Add -> PP.char '+'
   Sub -> PP.char '-'
 
-poly :: Bool -> [( String, Exp )] -> Exp -> IO ()
-poly pp assoc e = if pp
+arith :: Bool -> [( String, Exp )] -> Exp -> IO ()
+arith pp assoc e = if pp
   then maybe badEnv (print . pretty 0) $ beta (M.fromList assoc) e
   else maybe badEnv (print . eval) $ beta (M.fromList assoc) e
   where
-  badEnv = hPutStrLn stderr "poly: bad environment"
+  badEnv = hPutStrLn stderr "arith: bad environment"
 
-polyTerm = ( poly <$> pp <*> env <*> e, ti )
+arithTerm = ( arith <$> pp <*> env <*> e, ti )
   where
   pp = flag (optInfo [ "pretty", "p" ])
      { argName = "PP"
@@ -177,13 +177,14 @@ polyTerm = ( poly <$> pp <*> env <*> e, ti )
     }
 
   ti = def
-     { termName = "exp"
+     { termName = "arith"
      , version  = "0.3"
      , termDoc  = "Evaluate mathematical functions demonstrating precedence "
-               ++ "climbing and instantiating 'ArgVal'."
+               ++ "climbing and instantiating 'ArgVal' for tuples and Parsec "
+               ++ "parsers."
      , man      = [ S "BUGS"
                   , P "Email bug reports to <fitsCarolDo@example.com>"
                   ]
      }
 
-main = run polyTerm
+main = run arithTerm

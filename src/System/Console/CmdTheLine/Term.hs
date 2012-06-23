@@ -22,6 +22,7 @@ import qualified System.Console.CmdTheLine.Trie    as T
 
 import Control.Applicative hiding ( (<|>), empty )
 import Control.Arrow       ( second )
+import Control.Monad       ( join )
 
 import Data.List    ( find, sort )
 import Data.Maybe   ( fromJust )
@@ -233,9 +234,7 @@ exec term = do
 -- performs the action, and returns the result on success. On failure the
 -- program exits.
 run :: ( Term (IO a), TermInfo ) -> IO a
-run term = do
-  action <- exec term
-  action
+run = join . exec
 
 -- | 'evalChoice' @args mainTerm choices@ is analogous to 'eval', but for
 -- programs that provide a choice of commands.
@@ -266,6 +265,4 @@ execChoice main choices = do
 
 -- | Analogous to 'run', but for programs that provide a choice of commands.
 runChoice :: ( Term (IO a), TermInfo ) -> [( Term (IO a), TermInfo )] -> IO a
-runChoice main choices = do
-  action <- execChoice main choices
-  action
+runChoice main = join . execChoice main

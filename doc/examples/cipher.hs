@@ -148,14 +148,14 @@ defTI' = defTI
   , stdOptSection = comOpts
   }
 
--- 'input' is a common option. We set its 'argSec' field to 'comOpts' so
+-- 'input' is a common option. We set its 'optSec' field to 'comOpts' so
 -- that it is placed under that section instead of the default '"OPTIONS"'
 -- section, which we will reserve for command-specific options.
 input = value $ opt Nothing (optInfo [ "input", "i" ])
       { optName = "INPUT"
       , optDoc  = "For specifying input on the command line.  If present, "
                ++ "input is not read form standard-in."
-      , argSec  = comOpts
+      , optSec  = comOpts
       }
 
 
@@ -206,7 +206,7 @@ morseTerm = ( morse <$> from <*> input, termInfo )
     ]
 
 
-defaultTerm = ( ret . value $ const (Left $ HelpFail Pager Nothing) <$> input
+defaultTerm = ( ret $ const (helpFail Pager Nothing) <$> input
               , termInfo
               )
   where

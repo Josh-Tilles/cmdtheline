@@ -29,7 +29,7 @@ noCmd = helpFail Pager Nothing
 
 
 def' = defTI
-  { stdOptSection = "COMMON OPTIONS"
+  { stdOptSec = "COMMON OPTIONS"
   , man =
       [ S "COMMON OPTIONS"
       , P "These options are common to all commands."

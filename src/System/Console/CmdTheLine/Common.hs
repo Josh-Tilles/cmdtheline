@@ -105,35 +105,35 @@ data TermInfo = TermInfo
   {
   -- | The name of the command or program represented by the term. Defaults to
   -- @\"\"@.
-    termName      :: String
+    termName  :: String
 
   -- | Documentation for the term. Defaults to @\"\"@.
-  , termDoc       :: String
+  , termDoc   :: String
 
   -- | The section under which to place the terms documentation.
   -- Defaults to @\"COMMANDS\"@.
-  , termSection   :: String
+  , termSec   :: String
 
   -- | The section under which to place a term's argument's
   -- documentation by default. Defaults to @\"OPTIONS\"@.
-  , stdOptSection :: String
+  , stdOptSec :: String
 
   -- | A version string.  Must be left blank for commands. Defaults to @\"\"@.
-  , version       :: String
+  , version   :: String
 
   -- | A list of 'ManBlock's to append to the default @[ManBlock]@. Defaults
   -- to @[]@.
-  , man           :: [ManBlock]
+  , man       :: [ManBlock]
   } deriving ( Eq )
 
 -- | A default 'TermInfo'.
 defTI = TermInfo
-  { termName      = ""
-  , version       = ""
-  , termDoc       = ""
-  , termSection   = "COMMANDS"
-  , stdOptSection = "OPTIONS"
-  , man           = []
+  { termName  = ""
+  , version   = ""
+  , termDoc   = ""
+  , termSec   = "COMMANDS"
+  , stdOptSec = "OPTIONS"
+  , man       = []
   }
 
 type Command = ( TermInfo, [ArgInfo] )

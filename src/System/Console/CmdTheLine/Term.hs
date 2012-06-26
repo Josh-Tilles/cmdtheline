@@ -136,7 +136,7 @@ addStdOpts ei = ( hLookup, vLookup, ei' )
                     , optDoc  = doc
                     }
 
-  section = stdOptSection . fst $ term ei
+  section = stdOptSec . fst $ term ei
   doc     = "Show this help in format $(argName) (pager, plain, or groff)."
 
   addArgs = second (args' ++)

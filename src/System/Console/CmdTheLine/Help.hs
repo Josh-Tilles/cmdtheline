@@ -192,7 +192,7 @@ makeCmdItems ei = case evalKind ei of
   Choice -> []
   Main   -> sortBy (descCompare `on` fst) . foldl addCmd [] $ choices ei
   where
-  addCmd acc ( ti, _ ) = ( termSection ti, I (label ti) (termDoc ti) )
+  addCmd acc ( ti, _ ) = ( termSec ti, I (label ti) (termDoc ti) )
                        : acc
   label ti = "$(b," ++ termName ti ++ ")"
 

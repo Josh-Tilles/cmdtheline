@@ -145,7 +145,7 @@ defTI' = defTI
       , S "BUGS"
       , P "Email bug reports to <snideHighland@example.com>"
       ]
-  , stdOptSection = comOpts
+  , stdOptSec = comOpts
   }
 
 -- 'input' is a common option. We set its 'optSec' field to 'comOpts' so

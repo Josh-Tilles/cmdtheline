@@ -77,7 +77,7 @@ parseOptArg str
  -}
 parseArgs :: T.Trie ArgInfo -> CmdLine -> [String]
           -> Err ( CmdLine, [String] )
-parseArgs optTrie cl args = second (reverse . (++ rest)) <$> go 1 cl [] args
+parseArgs optTrie cl args = second ((++ rest) . reverse) <$> go 1 cl [] args'
   where
   -- Everything after '"--"' is a position argument.
   ( args', rest ) = splitOn "--" args

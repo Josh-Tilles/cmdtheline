@@ -13,8 +13,8 @@ grep pattern dests = do
 -- An example of using the 'pos' and 'posRight' Terms.
 grepTerm = ( grep <$> pattern <*> files, termInfo )
   where
-  pattern  = required $ pos 0 Nothing posInfo { argName = "PATTERN" }
-  files    = posRight 0 [] posInfo { argName = "FILE"    }
+  pattern  = required $ pos 0 Nothing posInfo { posName = "PATTERN" }
+  files    = value    $ posRight 0 [] posInfo { posName = "FILE"    }
   termInfo = defTI
     { termName = "grep"
     , version  = "2.5"

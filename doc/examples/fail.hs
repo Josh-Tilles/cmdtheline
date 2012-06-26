@@ -42,8 +42,8 @@ def' = defTI
 
 input :: Term [String]
 input = nonEmpty $ posAny [] posInfo
-      { argName = "INPUT"
-      , argDoc  = "Some input you would like printed to the screen on failure "
+      { posName = "INPUT"
+      , posDoc  = "Some input you would like printed to the screen on failure "
                ++ "or success."
       }
 
@@ -67,7 +67,7 @@ cmds =
            }
     )
 
-  , ( ret $ help <$> (pos 0 "" posInfo { argName = "TERM" })
+  , ( ret $ help <$> value (pos 0 "" posInfo { posName = "TERM" })
     , def' { termName = "help"
            , termDoc  = "Display help for a command."
            }

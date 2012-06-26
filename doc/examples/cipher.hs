@@ -135,8 +135,8 @@ morse from mStr = do
 comOpts = "COMMON OPTIONS"
 
 -- A modified default 'TermInfo' to be shared by commands.
-def' :: TermInfo
-def' = defTI
+defTI' :: TermInfo
+defTI' = defTI
   { man =
       [ S comOpts
       , P "These options are common to all commands."
@@ -148,54 +148,54 @@ def' = defTI
   , stdOptSection = comOpts
   }
 
--- 'input' is a common option. We set its 'argSection' field to 'comOpts' so
--- that it is placed under that heading instead of the default '"OPTIONS"'
--- heading, which we will reserve for command-specific options.
-input = opt Nothing (optInfo [ "input", "i" ])
-      { argName    = "INPUT"
-      , argDoc     = "For specifying input on the command line.  If present, "
-                  ++ "input is not read form standard-in."
-      , argSection = comOpts
+-- 'input' is a common option. We set its 'argSec' field to 'comOpts' so
+-- that it is placed under that section instead of the default '"OPTIONS"'
+-- section, which we will reserve for command-specific options.
+input = value $ opt Nothing (optInfo [ "input", "i" ])
+      { optName = "INPUT"
+      , optDoc  = "For specifying input on the command line.  If present, "
+               ++ "input is not read form standard-in."
+      , argSec  = comOpts
       }
 
 
 rotTerm = ( rot <$> back <*> n <*> input, termInfo )
   where
-  back = flag (optInfo [ "back", "b" ])
-       { argName = "BACK"
-       , argDoc  = "Rotate backwards instead of forwards."
+  back = value $ flag (optInfo [ "back", "b" ])
+       { optName = "BACK"
+       , optDoc  = "Rotate backwards instead of forwards."
        }
 
-  n    = opt 13 (optInfo [ "n" ])
-       { argName = "N"
-       , argDoc  = "How many places to rotate by."
+  n    = value $ opt 13 (optInfo [ "n" ])
+       { optName = "N"
+       , optDoc  = "How many places to rotate by."
        }
 
-  termInfo = def'
+  termInfo = defTI'
     { termName = "rot"
     , termDoc  = "Rotate the input characters by N."
     , man      = [ S "DESCRIPTION"
                  , P $ "Rotate input gathered from INPUT or standard-in N "
                     ++ "places.  The input must be composed totally of "
                     ++ "alphabetic characters and spaces."
-                 ] ++ man def'
+                 ] ++ man defTI'
     }
 
 
 morseTerm = ( morse <$> from <*> input, termInfo )
   where
-  from = flag (optInfo [ "from", "f" ])
-       { argName   = "FROM"
-       , argDoc    = "Convert from morse-code to the Latin alphabet. "
+  from = value $ flag (optInfo [ "from", "f" ])
+       { optName   = "FROM"
+       , optDoc    = "Convert from morse-code to the Latin alphabet. "
                   ++ "If absent, convert from Latin alphabet to morse-code."
        }
 
-  termInfo = def'
+  termInfo = defTI'
     { termName = "morse"
     , termDoc  = "Convert to and from morse-code."
     , man      = [ S "DESCRIPTION"
                  , P desc
-                 ] ++ man def'
+                 ] ++ man defTI'
     }
 
   desc = concat
@@ -206,11 +206,11 @@ morseTerm = ( morse <$> from <*> input, termInfo )
     ]
 
 
-defaultTerm = ( ret $ const (Left $ HelpFail Pager Nothing) <$> input
+defaultTerm = ( ret . value $ const (Left $ HelpFail Pager Nothing) <$> input
               , termInfo
               )
   where
-  termInfo = def'
+  termInfo = defTI'
     { termName      = "cipher"
     , version       = "v1.0"
     , termDoc       = doc

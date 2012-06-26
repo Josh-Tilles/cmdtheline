@@ -121,17 +121,19 @@ addStdOpts ei = ( hLookup, vLookup, ei' )
     "" -> ( [],  Nothing )
     _  -> ( ais, Just lookup )
     where
-    Term ais lookup = flag (optInfo ["version"])
-                    { argSection = section
-                    , argDoc     = "Show version information."
+    Term ais lookup = value
+                    $ flag (optInfo ["version"])
+                    { optSec = section
+                    , optDoc = "Show version information."
                     }
 
   ( args', hLookup ) = ( ais ++ args, lookup )
     where
-    Term ais lookup = defaultOpt (Just Pager) Nothing (optInfo ["help"])
-                    { argSection = section
-                    , argName    = "FMT"
-                    , argDoc     = doc
+    Term ais lookup = value
+                    $ defaultOpt (Just Pager) Nothing (optInfo ["help"])
+                    { optSec  = section
+                    , optName = "FMT"
+                    , optDoc  = doc
                     }
 
   section = stdOptSection . fst $ term ei

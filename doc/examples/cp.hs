@@ -73,20 +73,20 @@ cp dry sources dest =
 -- An example of using the 'rev' and 'Left' variants of 'pos'.
 cpTerm = cp <$> dry <*> sources <*> dest
   where
-  dry = flag (optInfo [ "dry", "d" ])
-      { argName = "DRY"
-      , argDoc  = "Perform a dry run.  Print what would be copied, but do not "
+  dry = value $ flag (optInfo [ "dry", "d" ])
+      { optName = "DRY"
+      , optDoc  = "Perform a dry run.  Print what would be copied, but do not "
                ++ "copy it."
       }
 
   sources = nonEmpty $ revPosLeft 0 [] posInfo
-          { argName = "SOURCES"
-          , argDoc  = "Source file(s) to copy."
+          { posName = "SOURCES"
+          , posDoc  = "Source file(s) to copy."
           }
 
   dest    = required $ revPos 0 Nothing posInfo
-          { argName = "DEST"
-          , argDoc  = "Destination of the copy. Must be a directory if there "
+          { posName = "DEST"
+          , posDoc  = "Destination of the copy. Must be a directory if there "
                    ++ "is more than one $(i,SOURCE)."
           }
 

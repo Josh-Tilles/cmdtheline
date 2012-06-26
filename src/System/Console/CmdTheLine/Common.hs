@@ -24,29 +24,11 @@ data PosKind = PosAny
              | PosR Bool Int
                deriving ( Eq, Ord )
 
--- | Information about an argument.  The following fields are exported for your
--- use.
---
--- #argName# 
---
--- [@argName@] :: 'String' A name to be used in the documentation to
--- refer to the argument's value. Defaults to @\"\"@.
---
--- #argDoc# 
---
--- [@argDoc@] :: 'String' A documentation string for the argument.
--- Defaults to @\"\"@.
---
--- #argSection# 
---
--- [@argSection@] :: 'String' The section under which to place the argument's
--- documentation.  Defaults to @\"OPTIONS\"@ for optional arguments and
--- @\"ARGUMENTS\"@ for positional arguments.
 data ArgInfo = ArgInfo
   { absence    :: Absence
   , argDoc     :: String
   , argName    :: String
-  , argSection :: String
+  , argSec     :: String
   , posKind    :: PosKind
   , optKind    :: OptKind
   , optNames   :: [String]

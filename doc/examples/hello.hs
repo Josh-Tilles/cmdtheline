@@ -3,12 +3,12 @@ import Control.Applicative
 
 -- Define a flag argument under the names '--silent' and '-s'
 silent :: Term Bool
-silent = flag $ optInfo [ "silent", "s" ]
+silent = value . flag $ optInfo [ "silent", "s" ]
 
 -- Define the 0th positional argument, defaulting to the value '"world"' in
 -- absence.
 greeted :: Term String
-greeted = pos 0 "world" posInfo { argName = "GREETED" }
+greeted = value $ pos 0 "world" posInfo { posName = "GREETED" }
 
 hello :: Bool -> String -> IO ()
 hello silent str =

@@ -160,20 +160,20 @@ arith pp assoc e = if pp
 
 arithTerm = ( arith <$> pp <*> env <*> e, ti )
   where
-  pp = flag (optInfo [ "pretty", "p" ])
-     { argName = "PP"
-     , argDoc  = "If present, pretty print instead of evaluating EXP."
+  pp = value $ flag (optInfo [ "pretty", "p" ])
+     { optName = "PP"
+     , optDoc  = "If present, pretty print instead of evaluating EXP."
      }
 
   env = nonEmpty $ posRight 0 [] posInfo
-      { argName = "ENV"
-      , argDoc  = "One or more assignments of the form '<name>=<exp>' to be "
+      { posName = "ENV"
+      , posDoc  = "One or more assignments of the form '<name>=<exp>' to be "
                ++ "substituted in the input expression."
       }
 
   e = required $ pos 0 Nothing posInfo
-    { argName = "EXP"
-    , argDoc  = "An arithmetic expression to be evaluated."
+    { posName = "EXP"
+    , posDoc  = "An arithmetic expression to be evaluated."
     }
 
   ti = defTI

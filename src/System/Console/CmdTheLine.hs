@@ -16,9 +16,6 @@ module System.Console.CmdTheLine
   -- * Manpages
   , ManBlock(..)
 
-  -- * Argument information
-  , ArgInfo( argDoc, argName, argSection )
-
   -- * User error reporting
   -- $err
   , Fail(), HelpFormat(..), Err
@@ -46,12 +43,12 @@ import Control.Monad    ( join )
 >
 > -- Define a flag argument under the names '--silent' and '-s'
 > silent :: Term Bool
-> silent = flag $ optInfo [ "silent", "s" ]
+> silent = value . flag $ optInfo [ "silent", "s" ]
 >
 > -- Define the 0th positional argument, defaulting to the value '"world"' in
 > -- absence.
 > greeted :: Term String
-> greeted = pos 0 "world" posInfo { argName = "GREETED" }
+> greeted = value $ pos 0 "world" posInfo { posName = "GREETED" }
 > 
 > hello :: Bool -> String -> IO ()
 > hello silent str =
@@ -100,19 +97,19 @@ import Control.Monad    ( join )
 > import Data.List ( intersperse )
 >
 > failMsg, failUsage, success :: [String] -> Err String
-> failMsg   strs = Left  . MsgFail   . fsep $ map text strs
-> failUsage strs = Left  . UsageFail . fsep $ map text strs
-> success   strs = Right . concat $ intersperse " " strs
+> failMsg   strs = msgFail   . fsep $ map text strs
+> failUsage strs = usageFail . fsep $ map text strs
+> success   strs = return . concat $ intersperse " " strs
 >
 > help :: String -> Err String
 > help name
->   | any (== name) cmdNames = Left . HelpFail Pager $ Just name
->   | name == ""             = Left $ HelpFail Pager Nothing
+>   | any (== name) cmdNames = helpFail Pager $ Just name
+>   | name == ""             = helpFail Pager Nothing
 >   | otherwise              =
->     Left . UsageFail $ quotes (text name) <+> text "is not the name of a command"
+>     usageFail $ quotes (text name) <+> text "is not the name of a command"
 >
 > noCmd :: Err String
-> noCmd = Left $ HelpFail Pager Nothing
+> noCmd = helpFail Pager Nothing
 
   We can now turn any of these functions into a @Term String@ by lifting into
   'Term' and passing the result to 'ret' to fold the 'Err' monad into the

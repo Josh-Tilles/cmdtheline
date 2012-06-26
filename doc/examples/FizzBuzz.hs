@@ -35,22 +35,22 @@ verbosity = lastOf $ vFlagAll [Normal] [ ( Verbose, verbose )
                                        ]
   where
   verbose =(optInfo [ "verbose", "v" ])
-          { argDoc  = "Give verbose output." }
+          { optDoc  = "Give verbose output." }
 
   silent  =(optInfo [ "quiet", "silent", "q", "s" ])
-          { argDoc  = "Provide no output." }
+          { optDoc  = "Provide no output." }
 
 fizz, buzz :: Term String
-fizz = opt "Fizz" $ (optInfo [ "Fizz", "fizz", "f" ])
-     { argDoc = "A string to print in the 'Fizz' case." }
+fizz = value $ opt "Fizz" (optInfo [ "Fizz", "fizz", "f" ])
+     { optDoc = "A string to print in the 'Fizz' case." }
 
-buzz = opt "Buzz" $ (optInfo [ "Buzz", "buzz", "b" ])
-     { argDoc = "A string to print in the 'Buzz' case." }
+buzz = value $ opt "Buzz" (optInfo [ "Buzz", "buzz", "b" ])
+     { optDoc = "A string to print in the 'Buzz' case." }
 
 times :: Term Int
-times = opt 100 $ (optInfo [ "times", "t" ])
-      { argName = "TIMES"
-      , argDoc  = "Run $(mname) for the numbers 1 to $(argName)."
+times = value $ opt 100 (optInfo [ "times", "t" ])
+      { optName = "TIMES"
+      , optDoc  = "Run $(mname) for the numbers 1 to $(argName)."
       }
 
 term :: Term (IO ())

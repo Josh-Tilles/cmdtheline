@@ -148,7 +148,7 @@ makeArgItems ei = map format xs
 
   revCmp ai' ai = if secCmp /= EQ then secCmp else compare' ai ai'
     where
-    secCmp = (compare `on` argSection) ai ai'
+    secCmp = (compare `on` argSec) ai ai'
 
     compare' = case ( isOpt ai, isOpt ai' ) of
       ( True,  True  ) -> compare `on` key . optNames
@@ -162,7 +162,7 @@ makeArgItems ei = map format xs
       where
       k = map toLower . head $ sortBy descCompare names
 
-  format ai = ( argSection ai, I label text )
+  format ai = ( argSec ai, I label text )
     where
     label = makeArgLabel ai ++ argvDoc
     text  = substDocName (argName ai) (argDoc ai)

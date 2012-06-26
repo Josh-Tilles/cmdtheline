@@ -3,9 +3,10 @@
  - See the file 'LICENSE' for further information.
  -}
 module System.Console.CmdTheLine.Arg
-  (
-  -- * Creating ArgInfos
-    optInfo, posInfo
+  ( Arg
+  -- * Argument Information
+  , OptInfo( optName, optDoc, optSec ), PosInfo( posName, posDoc, posSec )
+  , optInfo, posInfo
 
   -- * Optional arguments
   -- $opt
@@ -20,79 +21,123 @@ module System.Console.CmdTheLine.Arg
   -- $pos
   , pos, revPos, posAny, posLeft, posRight, revPosLeft, revPosRight
 
-  -- * Constraining Terms
-  , required, nonEmpty, lastOf
+  -- * Arguments as Terms
+  , value, required, nonEmpty, lastOf
   ) where
 
-import System.Console.CmdTheLine.Common
+import System.Console.CmdTheLine.Common  hiding ( Arg )
 import System.Console.CmdTheLine.CmdLine ( optArg, posArg )
 import System.Console.CmdTheLine.ArgVal  ( ArgVal(..) )
 import qualified System.Console.CmdTheLine.Err  as E
 import qualified System.Console.CmdTheLine.Trie as T
 
 import Control.Applicative
+import Control.Arrow       ( second )
+
 import Text.PrettyPrint
 
 import Data.List     ( sort, sortBy )
 import Data.Function ( on )
 
-
 argFail :: Doc -> Err a
 argFail = Left . MsgFail
 
--- | Initialize an 'ArgInfo' by providing a list of names.  The fields
--- @argName@(found at "System.Console.CmdTheLine#argName"),
--- @argDoc@(found at "System.Console.CmdTheLine#argDoc"), and
--- @argSection@(found at "System.Console.CmdTheLine#argSection")
--- can then be manipulated post-mortem, as in
+-- | The type of command line arguments.
+newtype Arg a = Arg (Term a)
+
+-- | Information about an optional argument. Exposes the folowing fields.
 --
--- > inf =(optInfo    [ "i", "insufflation" ])
--- >     { argName    = "INSUFFERABLE"
--- >     , argDoc     = "in the haunted house's harrow"
--- >     , argSection = "NOT FOR AUGHT"
--- >     }
+-- [@optName@] :: String: defaults to @\"\"@.
 --
--- Names of one character in length will be prefixed by @-@ on the
--- command line, while longer names will be prefixed by @--@.
+-- [@optDoc@]  :: String: defaults to @\"\"@.
 --
--- This function is meant to be used with optional arguments produced by 'flag',
--- 'opt', and friends-- not with positional arguments.  Positional arguments
--- provided with names will yield a run-time error, halting any and all program
--- runs.  Use 'posInfo' for positional arguments.
+-- [@otpSec@]  :: String: defautts to @\"OPTIONS\"@.
+data OptInfo = OInf
+  { unOInf  :: ArgInfo
+  , optName :: String
+  , optDoc  :: String
+  , optSec  :: String
+  }
+
+fromOptInfo :: OptInfo -> ArgInfo
+fromOptInfo oi = (unOInf oi)
+  { argName = optName oi
+  , argDoc  = optDoc  oi
+  , argSec  = optSec  oi
+  }
+
+-- | Information about a positional argument. Exposes the folowing fields.
 --
--- Likewise, if an optional argument is created with an 'ArgInfo' produced by
--- passing an empty list of names to 'optInfo', a run-time error will occur.
--- All optional arguments must have names.
-optInfo :: [String] -> ArgInfo
-optInfo names = ArgInfo
+-- [@posName@] :: String: defaults to @\"\"@.
+--
+-- [@posDoc@]  :: String: defaults to @\"\"@.
+--
+-- [@posSec@]  :: String: defautts to @\"ARGUMENTS\"@.
+data PosInfo = PInf
+  { unPInf  :: ArgInfo
+  , posName :: String
+  , posDoc  :: String
+  , posSec  :: String
+  }
+
+fromPosInfo :: PosInfo -> ArgInfo
+fromPosInfo pi = (unPInf pi)
+  { argName = posName pi
+  , argDoc  = posDoc  pi
+  , argSec  = posSec  pi
+  }
+
+mkInfo :: [String] -> ArgInfo
+mkInfo names = ArgInfo
   { absence    = Present ""
   , argDoc     = ""
   , argName    = ""
-  , argSection = defaultSection
+  , argSec     = ""
   , posKind    = PosAny
   , optKind    = FlagKind
   , optNames   = map dash names
   , repeatable = False
   }
   where
-  defaultSection
-    | names == [] = "ARGUMENTS"
-    | otherwise   = "OPTIONS"
-
   dash "" =
-    error "System.Console.CmdTheLine.Arg.optInfo recieved empty string as name"
+    error "System.Console.CmdTheLine.Arg.mkInfo recieved empty string as name"
 
   dash str@[_] = "-"  ++ str
   dash str     = "--" ++ str
 
--- | As 'optInfo' but for positional arguments, which by virtue of their
--- positions require no names.  If a positional argument is created with a
--- name, a run-time error will occur halting any and all program runs.
+-- | Initialize an 'OptInfo' by providing a list of names.  The fields
+-- @optName@, @optDoc@, and @argSec@ can then be manipulated post-mortem,
+-- as in
 --
--- If you mean to create an optional argument, use 'optInfo', and be sure to
--- give it a non-empty list of names to avoid these errors.
-posInfo :: ArgInfo
-posInfo = optInfo []
+-- > inf =(optInfo    [ "i", "insufflation" ])
+-- >     { optName = "INSUFFERABLE"
+-- >     , optDoc  = "in the haunted house's harrow"
+-- >     , optSec  = "NOT FOR AUGHT"
+-- >     }
+--
+-- Names of one character in length will be prefixed by @-@ on the command line,
+-- while longer names will be prefixed by @--@.
+--
+-- It is considered a programming error to provide an empty list of names to
+-- optInfo.
+optInfo [] =
+  error "System.Console.CmdTheLine.Arg.optInfo recieved empty list of names."
+optInfo names = OInf (mkInfo names) "" "" "OPTIONS"
+
+-- | Initialize a 'PosInfo'.  The fields @posName@, @posDoc@, and @posSec@
+-- can then be manipulated post-mortem, as in
+--
+-- > inf = posInfo
+-- >     { posName = "DEST"
+-- >     , posDoc  = "A destination for the operation."
+-- >     , posSec  = "DESTINATIONS"
+-- >     }
+--
+-- The fields @posName@ and @posDoc@ must be non-empty strings for the argument
+-- to be listed with its documentation under the section @posSec@ of generated
+-- help.
+posInfo :: PosInfo
+posInfo = PInf (mkInfo []) "" "" "ARGUMENTS"
 
 
 {- $opt
@@ -133,12 +178,10 @@ posInfo = optInfo []
 
 -- | Create a command line flag that can appear at most once on the
 -- command line.  Yields @False@ in absence and @True@ in presence.
-flag :: ArgInfo -> Term Bool
-flag ai =
-  if isPos ai
-     then error E.errNotPos
-     else Term [ai] yield
+flag :: OptInfo -> Arg Bool
+flag oi = Arg $ Term [ai] yield
   where
+  ai = fromOptInfo oi
   yield _ cl = case optArg cl ai of
     []                  -> Right   False
     [( _, _, Nothing )] -> Right   True
@@ -150,11 +193,10 @@ flag ai =
 
 -- | As 'flag' but may appear an infinity of times. Yields a list of @True@s
 -- as long as the number of times present.
-flagAll :: ArgInfo -> Term [Bool]
-flagAll ai
-  | isPos ai  = error E.errNotPos
-  | otherwise = Term [ai'] yield
+flagAll :: OptInfo -> Arg [Bool]
+flagAll oi = Arg $ Term [ai'] yield
   where
+  ai  = fromOptInfo oi
   ai' = ai { repeatable = True }
 
   yield _ cl = case optArg cl ai' of
@@ -168,14 +210,12 @@ flagAll ai
 -- | 'vFlag' @v [ ( v1, ai1 ), ... ]@ is an argument that can be present at most
 -- once on the command line. It takes on the value @vn@ when appearing as
 -- @ain@.
-vFlag :: a -> [( a, ArgInfo )] -> Term a
-vFlag v assoc = Term (map flag assoc) yield
+vFlag :: a -> [( a, OptInfo )] -> Arg a
+vFlag v assoc = Arg $ Term (map snd assoc') yield
   where
-  flag ( _, ai )
-    | isPos ai  = error E.errNotPos
-    | otherwise = ai
+  assoc' = map (second fromOptInfo) assoc
 
-  yield _ cl = go Nothing assoc
+  yield _ cl = go Nothing assoc'
     where
     go mv [] = case mv of
       Nothing       -> Right v
@@ -197,15 +237,16 @@ vFlag v assoc = Term (map flag assoc) yield
 -- | 'vFlagAll' @vs assoc@ is as 'vFlag' except that it can be present an
 -- infinity of times.  In absence, @vs@ is yielded.  When present, each
 -- value is collected in the order they appear.
-vFlagAll :: [a] -> [( a, ArgInfo)] -> Term [a]
-vFlagAll vs assoc = Term (map flag assoc) yield
+vFlagAll :: [a] -> [( a, OptInfo)] -> Arg [a]
+vFlagAll vs assoc = Arg $ Term (map flag assoc') yield
   where
+  assoc' = map (second fromOptInfo) assoc
   flag ( _, ai ) 
     | isPos ai  = error E.errNotOpt
     | otherwise = ai { repeatable = True }
 
   yield _ cl = do
-    result <- foldl addLookup (Right []) assoc
+    result <- foldl addLookup (Right []) assoc'
     case result of
       [] -> return vs
       _  -> return . map snd $ sortBy (compare `on` fst) result
@@ -228,11 +269,10 @@ parseOptValue f v = case parser v of
   Left  e -> Left  . UsageFail $ E.optParseValue f e
   Right v -> Right v
 
-mkOpt :: ArgVal a => Maybe a -> a -> ArgInfo -> Term a
-mkOpt vopt v ai
-  | isPos ai  = error E.errNotOpt
-  | otherwise = Term [ai'] yield
+mkOpt :: ArgVal a => Maybe a -> a -> OptInfo -> Arg a
+mkOpt vopt v oi = Arg $ Term [ai'] yield
     where
+    ai  = fromOptInfo oi
     ai' = ai { absence = Present . show $ pp v
              , optKind = case vopt of
                  Nothing -> OptKind
@@ -253,19 +293,18 @@ mkOpt vopt v ai
 -- | 'opt' @v ai@ is an optional argument that yields @v@ in absence, or an
 -- assigned value in presence.  If the option is present, but no value is
 -- assigned, it is considered a user-error and usage is printed on exit.
-opt :: ArgVal a => a -> ArgInfo -> Term a
+opt :: ArgVal a => a -> OptInfo -> Arg a
 opt = mkOpt Nothing
 
 -- | 'defaultOpt' @def v ai@ is as 'opt' except if it is present and no value is
 -- assigned on the command line, @def@ is the result.
-defaultOpt :: ArgVal a => a -> a -> ArgInfo -> Term a
+defaultOpt :: ArgVal a => a -> a -> OptInfo -> Arg a
 defaultOpt x = mkOpt $ Just x
 
-mkOptAll :: ( ArgVal a, Ord a ) => Maybe a -> [a] -> ArgInfo -> Term [a]
-mkOptAll vopt vs ai
-  | isPos ai  = error E.errNotOpt
-  | otherwise = Term [ai'] yield
+mkOptAll :: ( ArgVal a, Ord a ) => Maybe a -> [a] -> OptInfo -> Arg [a]
+mkOptAll vopt vs oi = Arg $ Term [ai'] yield
     where
+    ai  = fromOptInfo oi
     ai' = ai { absence    = Present ""
              , repeatable = True
              , optKind    = case vopt of
@@ -286,13 +325,13 @@ mkOptAll vopt vs ai
 -- | 'optAll' @vs ai@ is like 'opt' except that it yields @vs@ in absence and
 -- can appear an infinity of times.  The values it is assigned on the command
 -- line are accumulated in the order they appear.
-optAll :: ( ArgVal a, Ord a ) => [a] -> ArgInfo -> Term [a]
+optAll :: ( ArgVal a, Ord a ) => [a] -> OptInfo -> Arg [a]
 optAll = mkOptAll Nothing
 
 -- | 'defaultOptAll' @def vs ai@ is like 'optAll' except that if it is present
 -- without being assigned a value, the value @def@ takes its place in the list
 -- of results.
-defaultOptAll :: ( ArgVal a, Ord a ) => a -> [a] -> ArgInfo -> Term [a]
+defaultOptAll :: ( ArgVal a, Ord a ) => a -> [a] -> OptInfo -> Arg [a]
 defaultOptAll x = mkOptAll $ Just x
 
 
@@ -320,9 +359,10 @@ parsePosValue ai v = case parser v of
   Left  e -> Left  . UsageFail $ E.posParseValue ai e
   Right v -> Right v
 
-mkPos :: ArgVal a => Bool -> Int -> a -> ArgInfo -> Term a
-mkPos rev pos v ai = Term [ai'] yield
+mkPos :: ArgVal a => Bool -> Int -> a -> PosInfo -> Arg a
+mkPos rev pos v oi = Arg $ Term [ai'] yield
   where
+  ai  = fromPosInfo oi
   ai' = ai { absence = Present . show $ pp v
            , posKind = PosN rev pos
            }
@@ -333,19 +373,18 @@ mkPos rev pos v ai = Term [ai'] yield
 
 -- | 'pos' @n v ai@ is an argument defined by the @n@th positional argument
 -- on the command line. If absent the value @v@ is returned.
-pos :: ArgVal a => Int -> a -> ArgInfo -> Term a
+pos :: ArgVal a => Int -> a -> PosInfo -> Arg a
 pos    = mkPos False
 
 -- | 'revPos' @n v ai@ is as 'pos' but counting from the end of the command line
 -- to the front.
-revPos :: ArgVal a => Int -> a -> ArgInfo -> Term a
+revPos :: ArgVal a => Int -> a -> PosInfo -> Arg a
 revPos = mkPos True
 
-posList :: ArgVal a => PosKind -> [a] -> ArgInfo -> Term [a]
-posList kind vs ai
-  | isOpt ai  = error E.errNotPos
-  | otherwise = Term [ai'] yield
+posList :: ArgVal a => PosKind -> [a] -> PosInfo -> Arg [a]
+posList kind vs oi = Arg $ Term [ai'] yield
     where
+    ai  = fromPosInfo oi
     ai' = ai { posKind = kind }
     yield _ cl = case posArg cl ai' of
       [] -> Right vs
@@ -353,27 +392,27 @@ posList kind vs ai
 
 -- | 'posAny' @vs ai@ yields a list of all positional arguments or @vs@ if none
 -- are present.
-posAny :: ArgVal a => [a] -> ArgInfo -> Term [a]
+posAny :: ArgVal a => [a] -> PosInfo -> Arg [a]
 posAny = posList PosAny
 
 -- | 'posLeft' @n vs ai@ yield a list of all positional arguments to the left of
 -- the @n@th positional argument or @vs@ if there are none.
-posLeft :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
+posLeft :: ArgVal a => Int -> [a] -> PosInfo -> Arg [a]
 posLeft = posList . PosL False
 
 -- | 'posRight' @n vs ai@ is as 'posLeft' except yielding all values to the right
 -- of the @n@th positional argument.
-posRight :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
+posRight :: ArgVal a => Int -> [a] -> PosInfo -> Arg [a]
 posRight = posList . PosR False
 
 -- | 'revPosLeft' @n vs ai@ is as 'posLeft' except @n@ counts from the end of the
 -- command line to the front.
-revPosLeft :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
+revPosLeft :: ArgVal a => Int -> [a] -> PosInfo -> Arg [a]
 revPosLeft = posList . PosL True
 
 -- | 'revPosRight' @n vs ai@ is as 'posRight' except @n@ counts from the end of
 -- the command line to the front.
-revPosRight :: ArgVal a => Int -> [a] -> ArgInfo -> Term [a]
+revPosRight :: ArgVal a => Int -> [a] -> PosInfo -> Arg [a]
 revPosRight = posList . PosR True
 
 
@@ -383,25 +422,29 @@ revPosRight = posList . PosR True
 
 absent = map (\ ai -> ai { absence = Absent })
 
--- | 'required' @term@ converts @term@ so that it fails in the 'Nothing' and
--- yields @a@ in the 'Just'.
+-- | 'value' @arg@ makes @arg@ into a 'Term'.
+value :: Arg a -> Term a
+value (Arg term) = term
+
+-- | 'required' @arg@ converts @arg@ into a 'Term' such that it fails in the
+-- 'Nothing' and yields @a@ in the 'Just'.
 --
 -- This is used for required positional arguments.  There is nothing
 -- stopping you from using it with optional arguments, except that they
 -- would no longer be optional and it would be confusing from a user's
 -- perspective.
-required :: Term (Maybe a) -> Term a
-required (Term ais yield) = Term ais' yield'
+required :: Arg (Maybe a) -> Term a
+required (Arg (Term ais yield)) = Term ais' yield'
   where
   ais' = absent ais
   yield' ei cl = case yield ei cl of
     Left  e  -> Left  e
     Right mv -> maybe (argFail . E.argMissing $ head ais') Right mv
 
--- | 'nonEmpty' @term@ is a term that fails if its result is empty. Intended
+-- | 'nonEmpty' @arg@ is a 'Term' that fails if its result is empty. Intended
 -- for non-empty lists of positional arguments.
-nonEmpty :: Term [a] -> Term [a]
-nonEmpty (Term ais yield) = Term ais' yield'
+nonEmpty :: Arg [a] -> Term [a]
+nonEmpty (Arg (Term ais yield)) = Term ais' yield'
   where
   ais' = absent ais
   yield' ei cl = case yield ei cl of
@@ -409,13 +452,13 @@ nonEmpty (Term ais yield) = Term ais' yield'
     Right [] -> argFail . E.argMissing $ head ais'
     Right xs -> Right   xs
 
--- | 'lastOf' @term@ is a term that fails if its result is empty and evaluates
+-- | 'lastOf' @arg@ is a 'Term' that fails if its result is empty and evaluates
 -- to the last element of the resulting list otherwise.  Intended for lists
 -- of flags or options where the last takes precedence.
-lastOf :: Term [a] -> Term a
-lastOf (Term ais yield) = Term ais yield'
+lastOf :: Arg [a] -> Term a
+lastOf (Arg (Term ais yield)) = Term ais yield'
   where
   yield' ei cl = case yield ei cl of
-    Left e   -> Left    e
+    Left  e  -> Left    e
     Right [] -> argFail . E.argMissing $ head ais
     Right xs -> Right   $ last xs

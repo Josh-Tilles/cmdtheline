@@ -1,4 +1,4 @@
-CmdTheLine v0.1
+CmdTheLine v0.2
 ===============
 
 Command line option parsing with applicative functors.
@@ -25,6 +25,19 @@ Bugs
 ----
 Please report bugs to the
 [issue tracker](http://github.com/eli-frey/cmdtheline/issues).
+
+
+Branches
+--------
+
+###master
+The currently stable branch.
+
+###dev
+Bug fixes and aditions that don't break compatibility with master.
+
+###0.2
+The next release candidate.
 
 LICENSE
 -------

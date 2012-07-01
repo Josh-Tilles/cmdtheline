@@ -1,6 +1,6 @@
 Name: cmdtheline
 Version: 0.1.1
-Synopsis: Declaritive command-line option parsing and documentation library.
+Synopsis: Declarative command-line option parsing and documentation library.
 Description:
   CmdTheLine aims to remove tedium from the definition of command-line
   programs, producing usage, help and man pages with little effort.

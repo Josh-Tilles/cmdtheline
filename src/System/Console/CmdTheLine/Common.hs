@@ -146,10 +146,6 @@ data EvalInfo = EvalInfo
   , choices :: [Command] -- A list of command-terms.
   }
 
-data EvalKind = Simple   -- The program has no commands.
-              | Main     -- The default program is running.
-              | Choice   -- A command has been chosen.
-
 -- | The format to print help in.
 data HelpFormat = Pager | Plain | Groff deriving ( Eq )
 
@@ -164,11 +160,17 @@ instance Error Fail where
 -- message.
 type Err = ErrorT Fail IO
 
+
 type Yield a = EvalInfo -> CmdLine -> Err a
 
 -- | The underlying Applicative of the library.  A @Term@ represents a value
 -- in the context of being computed from the command line arguments.
 data Term a = Term [ArgInfo] (Yield a)
+
+
+data EvalKind = Simple   -- The program has no commands.
+              | Main     -- The default program is running.
+              | Choice   -- A command has been chosen.
 
 evalKind :: EvalInfo -> EvalKind
 evalKind ei

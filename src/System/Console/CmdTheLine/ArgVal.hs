@@ -33,6 +33,7 @@ import Control.Applicative hiding ( (<|>), empty )
 import Text.Parsec         hiding ( char )
 import Text.PrettyPrint
 
+
 -- | The type of parsers of individual command line argument values.
 type ArgParser a = String -> Either Doc a
 

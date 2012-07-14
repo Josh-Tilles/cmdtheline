@@ -10,7 +10,32 @@ import qualified System.Console.CmdTheLine.Help as H
 import Text.PrettyPrint
 import Data.List ( intersperse )
 
+import Control.Monad ( join )
+import Control.Monad.Trans.Error
+
 import System.IO
+
+-- | Fail with an arbitrary message on failure.
+msgFail :: Doc -> Err a
+msgFail = throwError . MsgFail
+
+-- | Fail with a message along with the usage on failure.
+usageFail :: Doc -> Err a
+usageFail = throwError . UsageFail
+
+-- | A format to print the help in and an optional name of the term to print
+-- help for.  If 'Nothing' is supplied, help will be printed for the currently
+-- evaluating term.
+helpFail :: HelpFormat -> Maybe String -> Err a
+helpFail fmt = throwError . HelpFail fmt
+
+-- | 'ret' @term@ folds @term@'s 'Err' context into the library to be handled
+-- internally and as seamlessly as other error messages that are built in.
+ret :: Term (Err a) -> Term a
+ret (Term ais yield) = Term ais yield'
+  where
+  yield' ei cl = join $ yield ei cl
+
 
 hsepMap :: (a -> Doc) -> [a] -> Doc
 hsepMap f = hsep . map f
@@ -33,7 +58,7 @@ invalid kind s exp = hsep
 
 invalidVal = invalid "value"
 
-no kind s = sep [ text "no", quotes $ s, kind ]
+no kind s = sep [ text "no", quotes $ text s, text kind ]
 
 notDir  s = quotes (s) <+> text "is not a directory"
 

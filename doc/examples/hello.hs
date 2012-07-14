@@ -11,10 +11,7 @@ greeted :: Term String
 greeted = value $ pos 0 "world" posInfo { posName = "GREETED" }
 
 hello :: Bool -> String -> IO ()
-hello silent str =
-  if silent
-     then return ()
-     else putStrLn $ "Hello, " ++ str ++ "!"
+hello silent str = when silent . putStrLn $ "Hello, " ++ str ++ "!"
 
 term :: Term (IO ())
 term = hello <$> silent <*> greeted

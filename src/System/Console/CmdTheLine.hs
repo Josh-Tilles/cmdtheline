@@ -6,6 +6,7 @@ module System.Console.CmdTheLine
   ( module System.Console.CmdTheLine.Term
   , module System.Console.CmdTheLine.Arg
   , module System.Console.CmdTheLine.ArgVal
+  , module System.Console.CmdTheLine.Util
 
   -- * Terms
   -- $term
@@ -28,6 +29,8 @@ import System.Console.CmdTheLine.Common
 import System.Console.CmdTheLine.Term
 import System.Console.CmdTheLine.Arg
 import System.Console.CmdTheLine.ArgVal
+import System.Console.CmdTheLine.Err
+import System.Console.CmdTheLine.Util
 
 import Text.PrettyPrint ( Doc )
 
@@ -122,24 +125,3 @@ import Control.Monad.Trans.Error ( throwError )
 > prepedNoCmdTerm :: Term String
 > prepedNoCmdTerm = ret noCmdTerm
 -}
-
--- | Fail with an arbitrary message on failure.
-msgFail :: Doc -> Err a
-msgFail = throwError . MsgFail
-
--- | Fail with a message along with the usage on failure.
-usageFail :: Doc -> Err a
-usageFail = throwError . UsageFail
-
--- | A format to print the help in and an optional name of the term to print
--- help for.  If 'Nothing' is supplied, help will be printed for the currently
--- evaluating term.
-helpFail :: HelpFormat -> Maybe String -> Err a
-helpFail fmt = throwError . HelpFail fmt
-
--- | 'ret' @term@ folds @term@'s 'Err' context into the library to be handled
--- internally and as seamlessly as other error messages that are built in.
-ret :: Term (Err a) -> Term a
-ret (Term ais yield) = Term ais yield'
-  where
-  yield' ei cl = join $ yield ei cl

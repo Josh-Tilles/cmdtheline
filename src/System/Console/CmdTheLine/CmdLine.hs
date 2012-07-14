@@ -11,6 +11,8 @@ import System.Console.CmdTheLine.Err as E
 import Control.Applicative
 import Control.Arrow ( second )
 
+import Control.Monad.Trans.Error ( throwError )
+
 import Text.PrettyPrint
 import Text.Parsec as P
 
@@ -82,7 +84,7 @@ parseArgs optTrie cl args = second ((++ rest) . reverse) <$> go 1 cl [] args'
   -- Everything after '"--"' is a position argument.
   ( args', rest ) = splitOn "--" args
   go k cl posArgs args = case args of
-    []         -> Right ( cl, posArgs )
+    []         -> return ( cl, posArgs )
     str : rest ->
       if isOpt str
          then asignOptValue str rest
@@ -109,8 +111,8 @@ parseArgs optTrie cl args = second ((++ rest) . reverse) <$> go 1 cl [] args'
                                                          , tail rest
                                                          )
 
-      handleErr T.NotFound  = Left $ UsageFail unknown
-      handleErr T.Ambiguous = Left $ UsageFail ambiguous
+      handleErr T.NotFound  = throwError $ UsageFail unknown
+      handleErr T.Ambiguous = throwError $ UsageFail ambiguous
 
       unknown   = E.unknown   "option" name
       ambiguous = E.ambiguous "option" name ambs
@@ -123,10 +125,10 @@ parseArgs optTrie cl args = second ((++ rest) . reverse) <$> go 1 cl [] args'
  - argument values 'args'.
  -}
 processPosArgs :: [ArgInfo] -> ( CmdLine, [String] ) -> Err CmdLine
-processPosArgs _       ( cl, [] ) = Right cl
+processPosArgs _       ( cl, [] ) = return cl
 processPosArgs posInfo ( cl, args )
-  | last <= maxSpec = Right cl'
-  | otherwise       = Left  $ UsageFail excess
+  | last <= maxSpec = return     cl'
+  | otherwise       = throwError $ UsageFail excess
   where
   last   = length args - 1
   excess = E.posExcess . map text $ takeEnd (last - maxSpec) args

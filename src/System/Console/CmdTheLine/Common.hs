@@ -5,9 +5,11 @@
 module System.Console.CmdTheLine.Common where
 
 import Data.Function    ( on )
-import Text.PrettyPrint ( Doc )
+import Text.PrettyPrint ( Doc, text )
 
 import qualified Data.Map as M
+
+import Control.Monad.Trans.Error
 
 data Absence = Absent
              | Present String
@@ -155,9 +157,12 @@ data Fail = MsgFail   Doc
           | UsageFail Doc
           | HelpFail  HelpFormat (Maybe String)
 
+instance Error Fail where
+  strMsg = MsgFail . text
+
 -- | A monad for values in the context of possibly failing with a helpful
 -- message.
-type Err a = Either Fail a
+type Err = ErrorT Fail IO
 
 type Yield a = EvalInfo -> CmdLine -> Err a
 

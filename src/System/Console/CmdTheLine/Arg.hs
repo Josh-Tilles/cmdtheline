@@ -34,13 +34,15 @@ import qualified System.Console.CmdTheLine.Trie as T
 import Control.Applicative
 import Control.Arrow       ( second )
 
+import Control.Monad.Trans.Error ( throwError )
+
 import Text.PrettyPrint
 
 import Data.List     ( sort, sortBy )
 import Data.Function ( on )
 
 argFail :: Doc -> Err a
-argFail = Left . MsgFail
+argFail = throwError . MsgFail
 
 -- | The type of command line arguments.
 newtype Arg a = Arg (Term a)
@@ -183,8 +185,8 @@ flag oi = Arg $ Term [ai] yield
   where
   ai = fromOptInfo oi
   yield _ cl = case optArg cl ai of
-    []                  -> Right   False
-    [( _, _, Nothing )] -> Right   True
+    []                  -> return False
+    [( _, _, Nothing )] -> return True
     [( _, f, Just v  )] -> argFail $ E.flagValue f v
 
     (( _, f, _ ) :
@@ -200,11 +202,11 @@ flagAll oi = Arg $ Term [ai'] yield
   ai' = ai { repeatable = True }
 
   yield _ cl = case optArg cl ai' of
-    [] -> Right []
+    [] -> return []
     xs -> mapM truth xs
 
   truth ( _, f, mv ) = case mv of
-    Nothing -> Right   True
+    Nothing -> return  True
     Just v  -> argFail $ E.flagValue f v
 
 -- | 'vFlag' @v [ ( v1, ai1 ), ... ]@ is an argument that can be present at most
@@ -218,8 +220,8 @@ vFlag v assoc = Arg $ Term (map snd assoc') yield
   yield _ cl = go Nothing assoc'
     where
     go mv [] = case mv of
-      Nothing       -> Right v
-      Just ( _, v ) -> Right v
+      Nothing       -> return v
+      Just ( _, v ) -> return v
 
     go mv (( v, ai ) : rest) = case optArg cl ai of
       []                  -> go mv rest
@@ -246,7 +248,7 @@ vFlagAll vs assoc = Arg $ Term (map flag assoc') yield
     | otherwise = ai { repeatable = True }
 
   yield _ cl = do
-    result <- foldl addLookup (Right []) assoc'
+    result <- foldl addLookup (return []) assoc'
     case result of
       [] -> return vs
       _  -> return . map snd $ sortBy (compare `on` fst) result
@@ -256,7 +258,7 @@ vFlagAll vs assoc = Arg $ Term (map flag assoc') yield
       xs -> (++) <$> mapM flagVal xs <*> acc
       where
       flagVal ( pos, f, mv ) = case mv of
-        Nothing -> Right   ( pos, v )
+        Nothing -> return  ( pos, v )
         Just v  -> argFail $ E.flagValue f v
    
 
@@ -266,8 +268,8 @@ vFlagAll vs assoc = Arg $ Term (map flag assoc') yield
 
 parseOptValue :: ArgVal a => String -> String -> Err a
 parseOptValue f v = case parser v of
-  Left  e -> Left  . UsageFail $ E.optParseValue f e
-  Right v -> Right v
+  Left  e -> throwError . UsageFail $ E.optParseValue f e
+  Right v -> return v
 
 mkOpt :: ArgVal a => Maybe a -> a -> OptInfo -> Arg a
 mkOpt vopt v oi = Arg $ Term [ai'] yield
@@ -279,12 +281,12 @@ mkOpt vopt v oi = Arg $ Term [ai'] yield
                  Just dv -> OptVal . show $ pp dv
              }
     yield _ cl = case optArg cl ai' of
-      []                  -> Right v
+      []                  -> return v
       [( _, f, Just v )]  -> parseOptValue f v
 
       [( _, f, Nothing )] -> case vopt of
         Nothing   -> argFail $ E.optValueMissing f
-        Just optv -> Right   optv
+        Just optv -> return  optv
 
       (( _, f, _ ) :
        ( _, g, _ ) :
@@ -313,14 +315,14 @@ mkOptAll vopt vs oi = Arg $ Term [ai'] yield
              }
 
     yield _ cl = case optArg cl ai' of
-      [] -> Right vs
+      [] -> return vs
       xs -> map snd . sortBy (compare `on` fst) <$> mapM parse xs
 
     parse ( pos, f, mv' ) = case mv' of
       Just v  -> (,) pos <$> parseOptValue f v
       Nothing -> case vopt of
         Nothing -> argFail $ E.optValueMissing f
-        Just dv -> Right   ( pos, dv )
+        Just dv -> return  ( pos, dv )
 
 -- | 'optAll' @vs ai@ is like 'opt' except that it yields @vs@ in absence and
 -- can appear an infinity of times.  The values it is assigned on the command
@@ -356,8 +358,8 @@ defaultOptAll x = mkOptAll $ Just x
 
 parsePosValue :: ArgVal a => ArgInfo -> String -> Err a
 parsePosValue ai v = case parser v of
-  Left  e -> Left  . UsageFail $ E.posParseValue ai e
-  Right v -> Right v
+  Left  e -> throwError . UsageFail $ E.posParseValue ai e
+  Right v -> return v
 
 mkPos :: ArgVal a => Bool -> Int -> a -> PosInfo -> Arg a
 mkPos rev pos v oi = Arg $ Term [ai'] yield
@@ -367,7 +369,7 @@ mkPos rev pos v oi = Arg $ Term [ai'] yield
            , posKind = PosN rev pos
            }
   yield _ cl = case posArg cl ai' of
-    []  -> Right v
+    []  -> return v
     [v] -> parsePosValue ai' v
     _   -> error "saw list with more than one member in pos converter"
 
@@ -387,7 +389,7 @@ posList kind vs oi = Arg $ Term [ai'] yield
     ai  = fromPosInfo oi
     ai' = ai { posKind = kind }
     yield _ cl = case posArg cl ai' of
-      [] -> Right vs
+      [] -> return vs
       xs -> mapM (parsePosValue ai') xs
 
 -- | 'posAny' @vs ai@ yields a list of all positional arguments or @vs@ if none
@@ -437,9 +439,8 @@ required :: Arg (Maybe a) -> Term a
 required (Arg (Term ais yield)) = Term ais' yield'
   where
   ais' = absent ais
-  yield' ei cl = case yield ei cl of
-    Left  e  -> Left  e
-    Right mv -> maybe (argFail . E.argMissing $ head ais') Right mv
+  yield' ei cl = aux =<< yield ei cl
+  aux = maybe (argFail . E.argMissing $ head ais') return
 
 -- | 'nonEmpty' @arg@ is a 'Term' that fails if its result is empty. Intended
 -- for non-empty lists of positional arguments.
@@ -447,10 +448,9 @@ nonEmpty :: Arg [a] -> Term [a]
 nonEmpty (Arg (Term ais yield)) = Term ais' yield'
   where
   ais' = absent ais
-  yield' ei cl = case yield ei cl of
-    Left  e  -> Left    e
-    Right [] -> argFail . E.argMissing $ head ais'
-    Right xs -> Right   xs
+  yield' ei cl = aux =<< yield ei cl
+  aux [] = argFail . E.argMissing $ head ais'
+  aux xs = return xs
 
 -- | 'lastOf' @arg@ is a 'Term' that fails if its result is empty and evaluates
 -- to the last element of the resulting list otherwise.  Intended for lists
@@ -458,7 +458,6 @@ nonEmpty (Arg (Term ais yield)) = Term ais' yield'
 lastOf :: Arg [a] -> Term a
 lastOf (Arg (Term ais yield)) = Term ais yield'
   where
-  yield' ei cl = case yield ei cl of
-    Left  e  -> Left    e
-    Right [] -> argFail . E.argMissing $ head ais
-    Right xs -> Right   $ last xs
+  yield' ei cl = aux =<< yield ei cl
+  aux [] = argFail . E.argMissing $ head ais
+  aux xs = return $ last xs

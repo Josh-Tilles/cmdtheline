@@ -24,6 +24,8 @@ import Control.Applicative hiding ( (<|>), empty )
 import Control.Arrow       ( second )
 import Control.Monad       ( join )
 
+import Control.Monad.Trans.Error
+
 import Data.List    ( find, sort )
 import Data.Maybe   ( fromJust )
 
@@ -44,15 +46,18 @@ data EvalFail = Help  HelpFormat (Maybe String)
               | Msg   Doc
               | Version
 
-type EvalErr = Either EvalFail
+instance Error EvalFail where
+  strMsg = Msg . text
 
-fromFail :: Fail -> EvalErr a
-fromFail (MsgFail   d)         = Left $ Msg   d
-fromFail (UsageFail d)         = Left $ Usage d
-fromFail (HelpFail  fmt mName) = Left $ Help  fmt mName
+type EvalErr = ErrorT EvalFail IO
+
+fromFail :: Fail -> EvalFail
+fromFail (MsgFail   d)         = Msg   d
+fromFail (UsageFail d)         = Usage d
+fromFail (HelpFail  fmt mName) = Help  fmt mName
 
 fromErr :: Err a -> EvalErr a
-fromErr = either fromFail return
+fromErr = mapErrorT . fmap $ either (Left . fromFail) Right
 
 printEvalErr :: EvalInfo -> EvalFail -> IO ()
 printEvalErr ei fail = case fail of
@@ -85,7 +90,7 @@ instance Functor Term where
     result = (.)
 
 instance Applicative Term where
-  pure v = Term [] (\ _ _ -> Right v)
+  pure v = Term [] (\ _ _ -> return v)
 
   (Term args f) <*> (Term args' v) = Term (args ++ args') wrapped
     where
@@ -145,22 +150,25 @@ addStdOpts ei = ( hLookup, vLookup, ei' )
 --
 
 evalTerm :: EvalInfo -> Yield a -> [String] -> IO a
-evalTerm ei yield args = either handleErr return $ do
-  ( cl, mResult ) <- fromErr $ do
-    cl      <- create (snd $ term ei') args
-    mResult <- helpArg ei' cl
+evalTerm ei yield args = do
+  eResult <- runErrorT $ do
+    ( cl, mResult ) <- fromErr $ do
+      cl      <- create (snd $ term ei') args
+      mResult <- helpArg ei' cl
 
-    return ( cl, mResult )
+      return ( cl, mResult )
 
-  let success = fromErr $ yield ei' cl
+    let success = fromErr $ yield ei' cl
 
-  case ( mResult, versionArg ) of
-    ( Just fmt, _         ) -> Left $ Help fmt mName
-    ( Nothing,  Just vArg ) -> case vArg ei' cl of
-                                    Left  e     -> fromFail e
-                                    Right True  -> Left Version
-                                    Right False -> success
-    _                       -> success
+    case ( mResult, versionArg ) of
+      ( Just fmt, _         ) -> throwError $ Help fmt mName
+      ( Nothing,  Just vArg ) -> do tf <- fromErr $ vArg ei' cl
+                                    if tf
+                                       then throwError Version
+                                       else success
+      _                       -> success
+
+  either handleErr return eResult
   where
   ( helpArg, versionArg, ei' ) = addStdOpts ei
 
@@ -177,14 +185,14 @@ evalTerm ei yield args = either handleErr return $ do
 
 chooseTerm :: TermInfo -> [( TermInfo, a )] -> [String]
            -> Err ( TermInfo, [String] )
-chooseTerm ti _       []              = Right ( ti, [] )
+chooseTerm ti _       []              = return ( ti, [] )
 chooseTerm ti choices args@( arg : rest )
-  | length arg > 1 && head arg == '-' = Right ( ti, args )
+  | length arg > 1 && head arg == '-' = return ( ti, args )
 
   | otherwise = case T.lookup arg index of
-    Right choice      -> Right ( choice, rest )
-    Left  T.NotFound  -> Left . UsageFail $ E.unknown   com arg
-    Left  T.Ambiguous -> Left . UsageFail $ E.ambiguous com arg ambs
+    Right choice      -> return ( choice, rest )
+    Left  T.NotFound  -> throwError . UsageFail $ E.unknown   com arg
+    Left  T.Ambiguous -> throwError . UsageFail $ E.ambiguous com arg ambs
     where
     index = foldl add T.empty choices
     add acc ( choice, _ ) = T.add acc (termName choice) choice
@@ -236,8 +244,8 @@ run = join . exec
 -- programs that provide a choice of commands.
 evalChoice :: [String] -> ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a
 evalChoice args mainTerm@( term, termInfo ) choices = do
-  ( chosen, args' ) <- either handleErr return . fromErr
-                     $ chooseTerm termInfo eiChoices args
+  ( chosen, args' ) <- either handleErr return =<<
+    (runErrorT . fromErr $ chooseTerm termInfo eiChoices args)
 
   let (Term ais yield) = fst . fromJust . find ((== chosen) . snd)
                        $ mainTerm : choices

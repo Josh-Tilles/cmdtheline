@@ -106,7 +106,7 @@ mkInfo names = ArgInfo
   dash str     = "--" ++ str
 
 -- | Initialize an 'OptInfo' by providing a list of names.  The fields
--- @optName@, @optDoc@, and @argSec@ can then be manipulated post-mortem,
+-- @optName@, @optDoc@, and @optSec@ can then be manipulated post-mortem,
 -- as in
 --
 -- > inf =(optInfo    [ "i", "insufflation" ])

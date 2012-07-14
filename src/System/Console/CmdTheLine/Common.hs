@@ -149,7 +149,7 @@ data EvalKind = Simple   -- The program has no commands.
               | Choice   -- A command has been chosen.
 
 -- | The format to print help in.
-data HelpFormat = Pager | Plain | Groff
+data HelpFormat = Pager | Plain | Groff deriving ( Eq )
 
 data Fail = MsgFail   Doc
           | UsageFail Doc
@@ -178,3 +178,9 @@ splitOn sep xs = ( left, rest' )
   where
   rest' = if rest == [] then rest else tail rest -- Skip the 'sep'.
   ( left, rest ) = span (/= sep) xs
+
+select :: a -> [( Bool, a )] -> a
+select baseCase = foldr (uncurry (?)) baseCase
+  where
+  (?) True = const
+  (?) False = flip const

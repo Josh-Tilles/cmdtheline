@@ -51,23 +51,22 @@ data Exp = IntExp Int
          | BinExp Bin Exp Exp
 
 instance ArgVal Exp where
-  parser = fromParsec onErr exp
+  converter = ( parser, pretty 0 )
     where
-    onErr str =  PP.text "invalid expression" PP.<+> PP.quotes (PP.text str)
+    parser = fromParsec onErr exp
+      where
+      onErr str =  PP.text "invalid expression" PP.<+> PP.quotes (PP.text str)
 
-  pp = pretty 0
 
 instance ArgVal (Maybe Exp) where
-  parser = just
-  pp = maybePP
+  converter = just
 
 data Assoc = L | R
 
 type Env = M.Map String Exp
 
 instance ArgVal ( String, Exp ) where
-  parser = pair '='
-  pp     = pairPP '='
+  converter = pair '='
 
 catParsers :: [Parser String] -> Parser String
 catParsers = foldl (liftA2 (++)) (return "")

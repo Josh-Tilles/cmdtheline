@@ -97,19 +97,13 @@ instance Applicative Term where
 --
 
 instance ArgVal HelpFormat where
-  parser = enum [ ( "pager", Pager )
-                , ( "plain", Plain )
-                , ( "groff", Groff )
-                ]
-
-  pp Pager = text "pager"
-  pp Plain = text "plain"
-  pp Groff = text "groff"
+  converter = enum [ ( "pager", Pager )
+                   , ( "plain", Plain )
+                   , ( "groff", Groff )
+                   ]
 
 instance ArgVal (Maybe HelpFormat) where
-  parser = just
-
-  pp = maybePP
+  converter = just
 
 addStdOpts :: EvalInfo -> ( Yield (Maybe HelpFormat)
                           , Maybe (Yield Bool)

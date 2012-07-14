@@ -27,7 +27,7 @@ module System.Console.CmdTheLine.Arg
 
 import System.Console.CmdTheLine.Common  hiding ( Arg )
 import System.Console.CmdTheLine.CmdLine ( optArg, posArg )
-import System.Console.CmdTheLine.ArgVal  ( ArgVal(..) )
+import System.Console.CmdTheLine.ArgVal  ( ArgVal, pp, parser )
 import qualified System.Console.CmdTheLine.Err  as E
 import qualified System.Console.CmdTheLine.Trie as T
 

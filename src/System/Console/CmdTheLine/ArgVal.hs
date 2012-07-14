@@ -6,23 +6,20 @@
 module System.Console.CmdTheLine.ArgVal
   (
   -- * Parsing values from the command line
-    ArgVal(..), ArgParser, ArgPrinter
+    ArgParser, ArgPrinter, Converter, ArgVal(..), pp, parser
 
   -- ** Helpers for instantiating ArgVal
   , fromParsec
   , enum
   -- *** Maybe values
-  , just, maybePP
+  , just
   -- *** List values
-  , list, listPP
+  , list
   -- *** Tuple values
-  , pair, pairPP
-  , triple, triplePP
-  , quadruple, quadruplePP
-  , quintuple, quintuplePP
+  , pair, triple, quadruple, quintuple
   ) where
 
-import System.Console.CmdTheLine.Common ( splitOn )
+import System.Console.CmdTheLine.Common ( splitOn, select )
 import qualified System.Console.CmdTheLine.Err as E
 import qualified System.Console.CmdTheLine.Trie as T
 
@@ -30,16 +27,32 @@ import Control.Arrow ( first, (***) )
 import Data.Function ( on )
 import Data.List     ( sort, unfoldr )
 import Data.Ratio    ( Ratio )
+import Data.Tuple    ( swap )
 
 import Control.Applicative hiding ( (<|>), empty )
 import Text.Parsec         hiding ( char )
 import Text.PrettyPrint
 
 -- | The type of parsers of individual command line argument values.
-type ArgParser  a = String -> Either Doc a
+type ArgParser a = String -> Either Doc a
 
 -- | The type of printers of values retrieved from the command line.
 type ArgPrinter a = a -> Doc
+
+-- | A converter is just a pair of a parser and a printer.
+type Converter a = ( ArgParser a, ArgPrinter a )
+
+-- | The class of values that can be converted from the command line.
+class ArgVal a where
+  converter :: Converter a
+
+-- | The parsing part of a 'converter'.
+parser :: ArgVal a => ArgParser  a
+parser = fst converter
+
+-- | The pretty printing part of a 'converter'.
+pp     :: ArgVal a => ArgPrinter a
+pp = snd converter
 
 decPoint      = string "."
 digits        = many1 digit
@@ -58,234 +71,224 @@ fromParsec :: ( String -> Doc) -> Parsec String () a -> ArgParser a
 fromParsec onErr p str = either (const . Left $ onErr str) Right
                        $ parse p "" str
 
--- | A parser of 'Maybe' values of 'ArgVal' instances. A convenient default
--- that merely lifts the 'ArgVal' instance's parsed value with 'Just'.
-just :: ArgVal a => ArgParser (Maybe a)
-just = either Left (Right . Just) . parser
+-- | A converter of 'Maybe' values of 'ArgVal' instances.
+-- 
+-- Parses as:
+--
+-- > fmap Just . parser
+--
+-- Pretty prints as:
+--
+-- > maybe empty pp
+just :: ArgVal a => Converter (Maybe a)
+just = ( fmap Just . parser, maybe empty pp )
 
--- | A printer of 'Maybe' values of 'ArgVal' instances. A convenient default
--- that prints nothing on the 'Nothing' and just the value on the 'Just'.
-maybePP :: ArgVal a => ArgPrinter (Maybe a)
-maybePP = maybe empty id . fmap pp
-
--- | A parser of enumerated values conveyed as an association list of
+-- | A converter of enumerated values conveyed as an association list of
 -- @( string, value )@ pairs.  Unambiguous prefixes of @string@ map to
 -- @value@.
-enum :: [( String, a )] -> ArgParser a
-enum assoc str = case T.lookup str trie of
-  Right v           -> Right v
-  Left  T.Ambiguous -> Left  $ E.ambiguous "enum value" str ambs
-  Left  T.NotFound  -> Left  . E.invalidVal (text str) $ text "expected" <+> alts
+enum :: Eq a => [( String, a )] -> Converter a
+enum assoc = ( parser, pp )
   where
-  ambs = sort $ T.ambiguities trie str
-  alts = E.alts $ map fst assoc
-  trie = T.fromList assoc
+  pp val = select notFoundErr $ map (((== val) *** text) . swap) assoc
+  notFoundErr = error $ unlines
+    [ "System.Console.CmdTheLine.ArgVal.enum pretty printer saw value not in"
+    , "provided association list"
+    ]
 
--- | @'list' sep@ creates a parser of lists of an 'ArgVal' instance separated
+  parser str = case T.lookup str trie of
+    Right v           -> Right v
+    Left  T.Ambiguous -> Left  $ E.ambiguous "enum value" str ambs
+    Left  T.NotFound  -> Left  $ E.invalidVal (text str) expected
+    where
+    trie = T.fromList assoc
+
+    expected = text "expected" <+> alts
+    alts     = E.alts $ map fst assoc
+
+    ambs = sort $ T.ambiguities trie str
+
+-- | @'list' sep@ creates a converter of lists of an 'ArgVal' instance separated
 -- by @sep@.
-list :: ArgVal a => Char -> ArgParser [a]
-list sep str = either (Left . E.element "list" str)
-                      Right
-                      . sequence $ unfoldr parseElem str
+list :: ArgVal a => Char -> Converter [a]
+list sep = ( parser', pp' )
   where
-  parseElem []  = Nothing
-  parseElem str = Just . first parser $ splitOn sep str
+  pp' = fsep . punctuate (char sep) . map pp
 
--- | @'listPP' sep@ creates a pretty printer of lists of an 'ArgVal' instance
--- seperated by @sep@.
-listPP :: ArgVal a => Char -> ArgPrinter [a]
-listPP sep = fsep . punctuate (char sep) . map pp
+  parser' str = either (Left . E.element "list" str)
+                       Right
+                       . sequence $ unfoldr parseElem str
+    where
+    parseElem []  = Nothing
+    parseElem str = Just . first parser $ splitOn sep str
 
--- | @'pair' sep@ creates a parser of pairs of 'ArgVal' instances separated
+-- | @'pair' sep@ creates a converter of pairs of 'ArgVal' instances separated
 -- by @sep@.
-pair :: ( ArgVal a, ArgVal b ) => Char -> ArgParser ( a, b )
-pair sep str = do
-  case yStr of
-    [] -> Left $ E.sepMiss sep str
-    _  -> return ()
-  case ( eX, eY ) of
-    ( Right x, Right y ) -> Right ( x, y )
-    ( Left  e, _       ) -> Left $ E.element "pair" xStr e
-    ( _,       Left e  ) -> Left $ E.element "pair" yStr e
+pair :: ( ArgVal a, ArgVal b ) => Char -> Converter ( a, b )
+pair sep = ( parser', pp' )
   where
-  ( eX, eY ) = parser *** parser $ xyStr
-  xyStr@( xStr, yStr ) = splitOn sep str
+  pp' ( x, y ) = pp x <> char sep <+> pp y
 
--- | @'pairPP' sep@ creates a pretty printer of pairs of 'ArgVal' instances
--- separated by @sep@
-pairPP :: ( ArgVal a, ArgVal b ) => Char -> ArgPrinter ( a, b )
-pairPP sep ( x, y ) = pp x <> char sep <+> pp y
+  parser' str = do
+    case yStr of
+      [] -> Left $ E.sepMiss sep str
+      _  -> return ()
+    case ( eX, eY ) of
+      ( Right x, Right y ) -> Right ( x, y )
+      ( Left  e, _       ) -> Left $ E.element "pair" xStr e
+      ( _,       Left e  ) -> Left $ E.element "pair" yStr e
+    where
+    ( eX, eY ) = parser *** parser $ xyStr
+    xyStr@( xStr, yStr ) = splitOn sep str
 
--- | @'triple' sep@ creates a parser of triples of 'ArgVal' instances separated
+-- | @'triple' sep@ creates a converter of triples of 'ArgVal' instances separated
 -- by @sep@.
-triple :: ( ArgVal a, ArgVal b, ArgVal c ) => Char -> ArgParser ( a, b, c )
-triple sep str = do
-  [ xStr, yStr, zStr ] <-
-    if length strs == 3
-       then Right strs
-       else Left  $ E.sepMiss sep str
-  case ( parser xStr, parser yStr, parser zStr ) of
-    ( Right x, Right y, Right z ) -> Right ( x, y, z )
-    ( Left  e, _     ,  _       ) -> Left $ E.element "pair" xStr e
-    ( _,       Left e,  _       ) -> Left $ E.element "pair" yStr e
-    ( _,       _     ,  Left e  ) -> Left $ E.element "pair" zStr e
+triple :: ( ArgVal a, ArgVal b, ArgVal c ) => Char -> Converter ( a, b, c )
+triple sep = ( parser', pp' )
   where
-  strs = unfoldr split str
+  pp' ( x, y, z ) = pp x <> char sep <+> pp y <> char sep <+> pp z
 
-  split []  = Nothing
-  split str = Just $ splitOn sep str
+  parser' str = do
+    [ xStr, yStr, zStr ] <-
+      if length strs == 3
+         then Right strs
+         else Left  $ E.sepMiss sep str
+    case ( parser xStr, parser yStr, parser zStr ) of
+      ( Right x, Right y, Right z ) -> Right ( x, y, z )
+      ( Left  e, _     ,  _       ) -> Left $ E.element "pair" xStr e
+      ( _,       Left e,  _       ) -> Left $ E.element "pair" yStr e
+      ( _,       _     ,  Left e  ) -> Left $ E.element "pair" zStr e
+    where
+    strs = unfoldr split str
 
--- | @'triplePP' sep@ creates a pretty printer of triples of 'ArgVal' instances
--- separated by @sep@
-triplePP :: ( ArgVal a, ArgVal b, ArgVal c ) => Char -> ArgPrinter ( a, b, c )
-triplePP sep ( x, y, z ) = pp x <> char sep <+> pp y <> char sep <+> pp z
+    split []  = Nothing
+    split str = Just $ splitOn sep str
 
--- | @'quadruple' sep@ creates a parser of quadruples of 'ArgVal' instances
+-- | @'quadruple' sep@ creates a converter of quadruples of 'ArgVal' instances
 -- separated by @sep@.
 quadruple :: ( ArgVal a, ArgVal b, ArgVal c, ArgVal d ) =>
-  Char -> ArgParser ( a, b, c, d )
-quadruple sep str = do
-  [ xStr, yStr, zStr, wStr ] <-
-    if length strs == 4
-       then Right strs
-       else Left  $ E.sepMiss sep str
-
-  case ( parser xStr, parser yStr, parser zStr, parser wStr ) of
-    ( Right x, Right y, Right z, Right w ) -> Right ( x, y, z, w )
-    ( Left  e, _     ,  _      , _       ) -> Left $ E.element "pair" xStr e
-    ( _,       Left e,  _      , _       ) -> Left $ E.element "pair" yStr e
-    ( _,       _     ,  Left e , _       ) -> Left $ E.element "pair" zStr e
-    ( _,       _     ,  _      , Left e  ) -> Left $ E.element "pair" wStr e
+  Char -> Converter ( a, b, c, d )
+quadruple sep = ( parser', pp' )
   where
-  strs = unfoldr split str
+  pp' ( x, y, z, w ) =
+    pp x <> char sep <+> pp y <> char sep <+> pp z <> char sep <+> pp w
 
-  split []  = Nothing
-  split str = Just $ splitOn sep str
+  parser' str = do
+    [ xStr, yStr, zStr, wStr ] <-
+      if length strs == 4
+         then Right strs
+         else Left  $ E.sepMiss sep str
 
--- | @'quadruplePP' sep@ creates a pretty printer of quadruples of 'ArgVal'
--- instances separated by @sep@
-quadruplePP :: ( ArgVal a, ArgVal b, ArgVal c, ArgVal d ) =>
-  Char -> ArgPrinter ( a, b, c, d )
-quadruplePP sep ( x, y, z, w ) =
-  pp x <> char sep <+> pp y <> char sep <+> pp z <> char sep <+> pp w
+    case ( parser xStr, parser yStr, parser zStr, parser wStr ) of
+      ( Right x, Right y, Right z, Right w ) -> Right ( x, y, z, w )
+      ( Left  e, _     ,  _      , _       ) -> Left $ E.element "pair" xStr e
+      ( _,       Left e,  _      , _       ) -> Left $ E.element "pair" yStr e
+      ( _,       _     ,  Left e , _       ) -> Left $ E.element "pair" zStr e
+      ( _,       _     ,  _      , Left e  ) -> Left $ E.element "pair" wStr e
+    where
+    strs = unfoldr split str
 
--- | @'quintuple' sep@ creates a parser of quintuples of 'ArgVal' instances
+    split []  = Nothing
+    split str = Just $ splitOn sep str
+
+-- | @'quintuple' sep@ creates a converter of quintuples of 'ArgVal' instances
 -- separated by @sep@.
 quintuple :: ( ArgVal a, ArgVal b, ArgVal c, ArgVal d, ArgVal e ) =>
-  Char -> ArgParser ( a, b, c, d, e )
-quintuple sep str = do
-  [ xStr, yStr, zStr, wStr, vStr ] <-
-    if length strs == 3
-       then Right strs
-       else Left  $ E.sepMiss sep str
-  case ( parser xStr, parser yStr, parser zStr, parser wStr, parser vStr ) of
-    ( Right x, Right y, Right z, Right w, Right v ) -> Right ( x, y, z, w, v )
-    ( Left  e, _     ,  _      , _      , _       ) ->
-      Left $ E.element "pair" xStr e
-    ( _,       Left e,  _      , _      , _       ) ->
-      Left $ E.element "pair" yStr e
-    ( _,       _     ,  Left e , _      , _       ) ->
-      Left $ E.element "pair" zStr e
-    ( _,       _     ,  _      , Left e , _       ) ->
-      Left $ E.element "pair" wStr e
-    ( _,       _     ,  _      , _      , Left e  ) ->
-      Left $ E.element "pair" vStr e
+  Char -> Converter ( a, b, c, d, e )
+quintuple sep = ( parser', pp' )
   where
-  strs = unfoldr split str
+  pp' ( x, y, z, w, v ) =
+    pp x <> char sep <+> pp y <> char sep <+> pp z <> char sep <+>
+      pp w <> char sep <+> pp v
 
-  split []  = Nothing
-  split str = Just $ splitOn sep str
+  parser' str = do
+    [ xStr, yStr, zStr, wStr, vStr ] <-
+      if length strs == 3
+         then Right strs
+         else Left  $ E.sepMiss sep str
+    case ( parser xStr, parser yStr, parser zStr, parser wStr, parser vStr ) of
+      ( Right x, Right y, Right z, Right w, Right v ) -> Right ( x, y, z, w, v )
+      ( Left  e, _     ,  _      , _      , _       ) ->
+        Left $ E.element "pair" xStr e
+      ( _,       Left e,  _      , _      , _       ) ->
+        Left $ E.element "pair" yStr e
+      ( _,       _     ,  Left e , _      , _       ) ->
+        Left $ E.element "pair" zStr e
+      ( _,       _     ,  _      , Left e , _       ) ->
+        Left $ E.element "pair" wStr e
+      ( _,       _     ,  _      , _      , Left e  ) ->
+        Left $ E.element "pair" vStr e
+    where
+    strs = unfoldr split str
 
--- | @'quintuplePP' sep@ creates a pretty printer of quintuples of 'ArgVal'
--- instances separated by @sep@
-quintuplePP :: ( ArgVal a, ArgVal b, ArgVal c, ArgVal d, ArgVal e ) =>
-  Char -> ArgPrinter ( a, b, c, d, e )
-quintuplePP sep ( x, y, z, w, v ) =
-  pp x <> char sep <+> pp y <> char sep <+> pp z <> char sep <+>
-    pp w <> char sep <+> pp v
+    split []  = Nothing
+    split str = Just $ splitOn sep str
 
 invalidVal = E.invalidVal `on` text
 
--- | The class of values that can be parsed from the command line. Instances
--- must provide both 'parser' and 'pp'.
-class ArgVal a where
-  parser :: ArgParser  a -- ^ A parser of instance values.
-  pp     :: ArgPrinter a -- ^ A pretty printer for instance values.
-
 instance ArgVal Bool where
-  parser   = fromParsec onErr
-           $ (True <$ string "true") <|> (False <$ string "false")
-    where
-    onErr str = E.invalidVal (text str) $ E.alts [ "true", "false" ]
-
-  pp True  = text "true"
-  pp False = text "false"
+  converter = enum [( "true", True ), ( "false", False )]
 
 instance ArgVal (Maybe Bool) where
-  parser = just
-  pp     = maybePP
+  converter = just
 
 instance ArgVal [Char] where
-  parser = Right
-  pp = text
+  converter = ( Right, text )
 
 instance ArgVal (Maybe [Char]) where
-  parser = just
-  pp     = maybePP
+  converter = just
 
 instance ArgVal Int where
-  parser = fromParsec onErr pInteger
+  converter = ( parser, int )
     where
-    onErr str = invalidVal str "expected an integer"
-  pp = int
+    parser = fromParsec onErr pInteger
+      where
+      onErr str = invalidVal str "expected an integer"
 
 instance ArgVal (Maybe Int) where
-  parser = just
-  pp     = maybePP
+  converter = just
 
 instance ArgVal Integer where
-  parser = fromParsec onErr pInteger
+  converter = ( parser, integer )
     where
-    onErr str = invalidVal str "expected an integer"
-  pp = integer
+    parser = fromParsec onErr pInteger
+      where
+      onErr str = invalidVal str "expected an integer"
 
 instance ArgVal (Maybe Integer) where
-  parser = just
-  pp     = maybePP
+  converter = just
 
 instance ArgVal Float where
-  parser = fromParsec onErr pFloating
+  converter = ( parser, float )
     where
-    onErr str = invalidVal str "expected a floating point number"
-  pp = float
+    parser = fromParsec onErr pFloating
+      where
+      onErr str = invalidVal str "expected a floating point number"
 
 instance ArgVal (Maybe Float) where
-  parser = just
-  pp     = maybePP
+  converter = just
 
 instance ArgVal Double where
-  parser = fromParsec onErr pFloating
+  converter = ( parser, double )
     where
-    onErr str = invalidVal str "expected a floating point number"
-  pp = double
+    parser = fromParsec onErr pFloating
+      where
+      onErr str = invalidVal str "expected a floating point number"
 
 instance ArgVal (Maybe Double) where
-  parser = just
-  pp     = maybePP
+  converter = just
 
 instance ArgVal (Ratio Integer) where
-  parser = fromParsec onErr
-         $ read <$> concatParsers [ int <* spaces
-                                  , string "%"
-                                  , spaces >> int
-                                  ]
+  converter = ( parser, rational )
     where
-    int = concatParsers [ sign, digits ]
-    onErr str =
-      invalidVal str "expected a ratio in the form '<numerator> % <denominator>'"
-
-  pp = rational
+    parser = fromParsec onErr
+           $ read <$> concatParsers [ int <* spaces
+                                    , string "%"
+                                    , spaces >> int
+                                    ]
+      where
+      int = concatParsers [ sign, digits ]
+      onErr str =
+        invalidVal str "expected a ratio in the form '<numerator> % <denominator>'"
 
 instance ArgVal (Maybe (Ratio Integer)) where
-  parser = just
-  pp     = maybePP
+  converter = just

@@ -19,7 +19,7 @@ module System.Console.CmdTheLine
 
   -- * User error reporting
   -- $err
-  , Fail(), HelpFormat(..), Err
+  , HelpFormat(..), Err()
   , msgFail, usageFail, helpFail
   , ret
   )
@@ -124,4 +124,7 @@ import Control.Monad.Trans.Error ( throwError )
 >
 > prepedNoCmdTerm :: Term String
 > prepedNoCmdTerm = ret noCmdTerm
+
+  For other examples of ways to use the 'Err' monad, see the source of the
+  exists* family of functions in "System.Console.CmdTheLine.Util".
 -}

@@ -43,7 +43,8 @@ Library
   exposed-modules: System.Console.CmdTheLine,
                    System.Console.CmdTheLine.Arg,
                    System.Console.CmdTheLine.ArgVal,
-                   System.Console.CmdTheLine.Term
+                   System.Console.CmdTheLine.Term,
+                   System.Console.CmdTheLine.Util
 
   other-modules:   System.Console.CmdTheLine.Common,
                    System.Console.CmdTheLine.Err,

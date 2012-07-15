@@ -45,6 +45,8 @@ import Control.Monad.Trans.Error ( throwError )
 > import System.Console.CmdTheLine
 > import Control.Applicative
 >
+> import Control.Monad ( when )
+>
 > -- Define a flag argument under the names '--silent' and '-s'
 > silent :: Term Bool
 > silent = value . flag $ optInfo [ "silent", "s" ]
@@ -55,10 +57,7 @@ import Control.Monad.Trans.Error ( throwError )
 > greeted = value $ pos 0 "world" posInfo { posName = "GREETED" }
 > 
 > hello :: Bool -> String -> IO ()
-> hello silent str =
->   if silent
->      then return ()
->      else putStrLn $ "Hello, " ++ str ++ "!"
+> hello silent str = when (not silent) . putStrLn $ "Hello, " ++ str ++ "!"
 >
 > term :: Term (IO ())
 > term = hello <$> silent <*> greeted

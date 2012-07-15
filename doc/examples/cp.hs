@@ -2,7 +2,6 @@ import System.Console.CmdTheLine
 import Control.Applicative
 
 import System.Directory ( copyFile
-                        , doesFileExist
                         , doesDirectoryExist
                         )
 import System.FilePath  ( takeFileName
@@ -15,63 +14,39 @@ import System.Exit ( exitFailure )
 
 sep = [pathSeparator]
 
-infixr 1 ?
--- Like C's ternary operator. 'predicate ? then-clause $ else-clause'.
--- Nice for nested, if-elseif style boolean bifurcation.
-(?) True  = const
-(?) False = flip const
-
 cp :: Bool -> [String] -> String -> IO ()
 cp dry sources dest =
   chooseTactic =<< doesDirectoryExist dest
   where
-  chooseTactic isDir = 
-    singleFile ? singleCopy isDir $
-    not isDir  ? notDirErr $
-    mapM_ copySourcesToDir sources
+  chooseTactic isDir
+    | singleFile = singleCopy $ head sources
+    | not isDir  = notDirErr
+    | otherwise  = mapM_ copyToDir sources
+    where
+    singleCopy = if isDir then copyToDir else copyToFile
 
   singleFile = length sources == 1
 
-  -- Errors
   notDirErr = do
-    hPutStrLn stderr $ "cp: target '" ++ dest ++ "' is not a directory"
+    hPutStrLn stderr "cp: DEST is not a directory and SOURCES is of length >1."
     exitFailure
 
-  notFileErr str = do
-    hPutStrLn stderr $ "cp: '" ++ str ++ "': no such file"
-    exitFailure
-
-  -- Tactics
-  singleCopy isDir = do
-    choose =<< doesFileExist filePath
-    where
-    choose isFile =
-      isFile && isDir ? copyToDir  filePath $
-      isFile          ? copyToFile filePath $
-      notFileErr filePath
-
-    filePath = head sources
-
-  copySourcesToDir filePath = do
-    isFile <- doesFileExist filePath
-    isFile ? copyToDir  filePath
-           $ notFileErr filePath
-
-  -- File copying
   copyToDir filePath = if dry
     then putStrLn $ concat [ "cp: copying ", filePath, " to ", dest' ]
     else copyFile filePath dest'
     where
     dest'           = withTrailingSep ++ takeFileName filePath
-    withTrailingSep = hasTrailingPathSeparator dest ? dest $ dest ++ sep
+    withTrailingSep =
+      if hasTrailingPathSeparator dest then dest else dest ++ sep
 
   copyToFile filePath = if dry
     then putStrLn $ concat [ "cp: copying ", filePath, " to ", dest ]
     else copyFile filePath dest
 
 
--- An example of using the 'rev' and 'Left' variants of 'pos'.
-cpTerm = cp <$> dry <*> sources <*> dest
+-- An example of using the 'rev' and 'Left' variants of 'pos', as well as
+-- validating file paths.
+cpTerm = cp <$> dry <*> existsFiles sources <*> validPath dest
   where
   dry = value $ flag (optInfo [ "dry", "d" ])
       { optName = "DRY"

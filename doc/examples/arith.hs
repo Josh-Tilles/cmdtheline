@@ -19,19 +19,11 @@ import System.IO
 
 type Parser a = Parsec String () a
 
-data Bin = Pow
-         | Mul
-         | Div
-         | Add
-         | Sub
+data Bin = Pow | Mul | Div | Add | Sub
 
 prec :: Bin -> Int
 prec b = case b of
-  Pow -> 3
-  Mul -> 2
-  Div -> 2
-  Add -> 1
-  Sub -> 1
+  { Pow -> 3 ; Mul -> 2 ; Div -> 2 ; Add -> 1 ; Sub -> 1 }
 
 assoc :: Bin -> Assoc
 assoc b = case b of
@@ -40,11 +32,7 @@ assoc b = case b of
 
 toFunc :: Bin -> (Int -> Int -> Int)
 toFunc b = case b of
-  Pow -> (^)
-  Mul -> (*)
-  Div -> div
-  Add -> (+)
-  Sub -> (-)
+  { Pow -> (^) ; Mul -> (*) ; Div -> div ; Add -> (+) ; Sub -> (-) }
 
 data Exp = IntExp Int
          | VarExp String
@@ -54,19 +42,17 @@ instance ArgVal Exp where
   converter = ( parser, pretty 0 )
     where
     parser = fromParsec onErr exp
-      where
-      onErr str =  PP.text "invalid expression" PP.<+> PP.quotes (PP.text str)
-
+    onErr str =  PP.text "invalid expression" PP.<+> PP.quotes (PP.text str)
 
 instance ArgVal (Maybe Exp) where
   converter = just
 
+instance ArgVal ( String, Exp ) where
+  converter = pair '='
+
 data Assoc = L | R
 
 type Env = M.Map String Exp
-
-instance ArgVal ( String, Exp ) where
-  converter = pair '='
 
 catParsers :: [Parser String] -> Parser String
 catParsers = foldl (liftA2 (++)) (return "")
@@ -151,10 +137,9 @@ ppBin b = case b of
   Sub -> PP.char '-'
 
 arith :: Bool -> [( String, Exp )] -> Exp -> IO ()
-arith pp assoc e = if pp
-  then maybe badEnv (print . pretty 0) $ beta (M.fromList assoc) e
-  else maybe badEnv (print . eval) $ beta (M.fromList assoc) e
+arith pp assoc = maybe badEnv method . beta (M.fromList assoc)
   where
+  method = if pp then print . pretty 0 else print . eval
   badEnv = hPutStrLn stderr "arith: bad environment"
 
 arithTerm = ( arith <$> pp <*> env <*> e, ti )

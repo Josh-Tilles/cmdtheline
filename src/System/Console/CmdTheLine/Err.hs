@@ -1,4 +1,4 @@
-{- Copyright Â© 2012, Vincent Elisha Lee Frey.  All rights reserved.
+{- Copyright © 2012, Vincent Elisha Lee Frey.  All rights reserved.
  - This is open source software distributed under a MIT license.
  - See the file 'LICENSE' for further information.
  -}
@@ -40,8 +40,6 @@ ret (Term ais yield) = Term ais yield'
 hsepMap :: (a -> Doc) -> [a] -> Doc
 hsepMap f = hsep . map f
 
-doc `leadBy` str = str $+$ nest 0 doc
-
 errArgv     = text "argv array must have at least one element"
 errNotOpt   = "Option argument without name"
 errNotPos   = "Positional argument with a name"
@@ -58,7 +56,7 @@ invalid kind s exp = hsep
 
 invalidVal = invalid "value"
 
-no kind s = sep [ text "no", quotes $ text s, text kind ]
+no kind s = sep [ text "no such", text kind, quotes $ text s ]
 
 notDir  s = quotes (s) <+> text "is not a directory"
 

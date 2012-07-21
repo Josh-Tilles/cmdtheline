@@ -46,7 +46,7 @@ cp dry sources dest =
 
 -- An example of using the 'rev' and 'Left' variants of 'pos', as well as
 -- validating file paths.
-cpTerm = cp <$> dry <*> existsFiles sources <*> validPath dest
+cpTerm = cp <$> dry <*> filesExist sources <*> validPath dest
   where
   dry = value $ flag (optInfo [ "dry", "d" ])
       { optName = "DRY"

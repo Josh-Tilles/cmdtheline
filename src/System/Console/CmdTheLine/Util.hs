@@ -6,9 +6,9 @@ module System.Console.CmdTheLine.Util
   (
   -- * File path validation
   -- ** Existing path check
-    existsFile,  existsDir,  existsPath
+    fileExists,  dirExists,  pathExists
   -- ** Existing paths check
-  , existsFiles, existsDirs, existsPaths
+  , filesExist, dirsExist, pathsExist
   -- ** Valid path
   , validPath
   ) where

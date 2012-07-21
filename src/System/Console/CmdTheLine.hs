@@ -125,5 +125,5 @@ import Control.Monad.Trans.Error ( throwError )
 > prepedNoCmdTerm = ret noCmdTerm
 
   For other examples of ways to use the 'Err' monad, see the source of the
-  exists* family of functions in "System.Console.CmdTheLine.Util".
+  *Exists family of functions in "System.Console.CmdTheLine.Util".
 -}

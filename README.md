@@ -31,12 +31,12 @@ Branches
 --------
 
 ###master
-The currently stable branch.
+The currently (0.2) stable branch.
 
 ###dev
 Bug fixes and aditions that don't break compatibility with master.
 
-###0.2
+###0.3
 The next release candidate.
 
 LICENSE

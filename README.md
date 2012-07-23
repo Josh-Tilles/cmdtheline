@@ -1,4 +1,4 @@
-CmdTheLine v0.2
+CmdTheLine v0.3
 ===============
 
 Command line option parsing with applicative functors.

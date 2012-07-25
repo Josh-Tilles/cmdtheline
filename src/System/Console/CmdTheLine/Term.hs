@@ -41,17 +41,17 @@ import Text.Parsec
 -- EvalErr
 --
 
-data EvalFail = Help  HelpFormat (Maybe String)
+data EvalExit = Help  HelpFormat (Maybe String)
               | Usage Doc
               | Msg   Doc
               | Version
 
-instance Error EvalFail where
+instance Error EvalExit where
   strMsg = Msg . text
 
-type EvalErr = ErrorT EvalFail IO
+type EvalErr = ErrorT EvalExit IO
 
-fromFail :: Fail -> EvalFail
+fromFail :: Fail -> EvalExit
 fromFail (MsgFail   d)         = Msg   d
 fromFail (UsageFail d)         = Usage d
 fromFail (HelpFail  fmt mName) = Help  fmt mName
@@ -59,7 +59,7 @@ fromFail (HelpFail  fmt mName) = Help  fmt mName
 fromErr :: Err a -> EvalErr a
 fromErr = mapErrorT . fmap $ either (Left . fromFail) Right
 
-printEvalErr :: EvalInfo -> EvalFail -> IO a
+printEvalErr :: EvalInfo -> EvalExit -> IO a
 printEvalErr ei fail = case fail of
   Usage doc -> do E.printUsage   stderr ei doc
                   exitFailure

@@ -30,7 +30,7 @@ import Data.List    ( find, sort )
 import Data.Maybe   ( fromJust )
 
 import System.Environment ( getArgs )
-import System.Exit        ( exitFailure )
+import System.Exit        ( exitFailure, exitSuccess )
 import System.IO
 
 import Text.PrettyPrint
@@ -59,14 +59,16 @@ fromFail (HelpFail  fmt mName) = Help  fmt mName
 fromErr :: Err a -> EvalErr a
 fromErr = mapErrorT . fmap $ either (Left . fromFail) Right
 
-printEvalErr :: EvalInfo -> EvalFail -> IO ()
+printEvalErr :: EvalInfo -> EvalFail -> IO a
 printEvalErr ei fail = case fail of
   Usage doc -> do E.printUsage   stderr ei doc
                   exitFailure
   Msg   doc -> do E.print        stderr ei doc
                   exitFailure
-  Version   -> H.printVersion stdout ei
-  Help fmt mName -> either print (H.print fmt stdout) (eEi mName)
+  Version   -> do H.printVersion stdout ei
+                  exitSuccess
+  Help fmt mName -> do either print (H.print fmt stdout) (eEi mName)
+                       exitSuccess
   where
   -- Either we are in the default term, or the commands name is in `mName`.
   eEi = maybe (Right ei { term = main ei }) process
@@ -179,8 +181,7 @@ evalTerm ei yield args = do
   defName  = termName . fst $ main ei'
   evalName = termName . fst $ term ei'
 
-  handleErr e = do printEvalErr ei' e
-                   exitFailure
+  handleErr = printEvalErr ei'
 
 
 chooseTerm :: TermInfo -> [( TermInfo, a )] -> [String]
@@ -258,8 +259,7 @@ evalChoice args mainTerm@( term, termInfo ) choices = do
   eiChoices = map mkCommand choices
 
   -- Only handles errors caused by chooseTerm.
-  handleErr e = do printEvalErr (chooseTermEi mainTerm choices) e
-                   exitFailure
+  handleErr = printEvalErr (chooseTermEi mainTerm choices)
 
 -- | Analogous to 'exec', but for programs that provide a choice of commands.
 execChoice :: ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a

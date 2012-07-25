@@ -22,7 +22,7 @@ import qualified System.Console.CmdTheLine.Trie    as T
 
 import Control.Applicative hiding ( (<|>), empty )
 import Control.Arrow       ( second )
-import Control.Monad       ( join )
+import Control.Monad       ( join, (<=<) )
 
 import Control.Monad.Trans.Error
 
@@ -152,8 +152,7 @@ addStdOpts ei = ( hLookup, vLookup, ei' )
 --
 
 evalTerm :: EvalInfo -> Yield a -> [String] -> IO a
-evalTerm ei yield args = do
-  eResult <- runErrorT $ do
+evalTerm ei yield args = either handleErr return <=< runErrorT $ do
     ( cl, mResult ) <- fromErr $ do
       cl      <- create (snd $ term ei') args
       mResult <- helpArg ei' cl
@@ -170,7 +169,6 @@ evalTerm ei yield args = do
                                        else success
       _                       -> success
 
-  either handleErr return eResult
   where
   ( helpArg, versionArg, ei' ) = addStdOpts ei
 

@@ -229,6 +229,7 @@ chooseTermEi mainTerm choices = EvalInfo command command eiChoices
 
 type ProcessTo a b = EvalInfo -> Yield a -> [String] -> IO b
 
+-- Share code between 'eval' and 'unwrap' with this HOF.
 evalBy :: ProcessTo a b -> [String] -> ( Term a, TermInfo ) -> IO b
 evalBy method args termPair@( term, _ ) = method ei yield args
   where
@@ -263,6 +264,7 @@ run = join . exec
 unwrap :: [String] -> ( Term a, TermInfo ) -> IO (Either EvalExit a)
 unwrap = evalBy unwrapTerm
 
+-- Share code between 'evalChoice' and 'unwrapChoice' with this HOF.
 evalChoiceBy :: ProcessTo a b
              -> [String] -> ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO b
 evalChoiceBy method args mainTerm@( term, termInfo ) choices = do

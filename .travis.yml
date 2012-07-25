@@ -1,6 +1,6 @@
 language: haskell
 install:
-  cabal update && cabal install
-  cabal install HUnit
-  cabal install test-framework
-  cabal install test-framework-hunit
+  - cabal update && cabal install
+  - cabal install HUnit
+  - cabal install test-framework
+  - cabal install test-framework-hunit

@@ -2,6 +2,7 @@
  - This is open source software distributed under a MIT license.
  - See the file 'LICENSE' for further information.
  -}
+{-# LANGUAGE FlexibleInstances #-}
 module System.Console.CmdTheLine.Term
   (
   -- * Evaluating Terms

@@ -14,8 +14,7 @@ To install, do
 Depends
 -------
 All dependencies are provided by the [Haskell
-Platform](http://hackage.haskell.org/platform). See cmdtheline.cabal for library
-dependencies.
+Platform](http://hackage.haskell.org/platform).
 
 Docs
 ----

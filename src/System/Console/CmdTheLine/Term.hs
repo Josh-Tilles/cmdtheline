@@ -2,14 +2,18 @@
  - This is open source software distributed under a MIT license.
  - See the file 'LICENSE' for further information.
  -}
+{-# LANGUAGE FlexibleInstances #-}
 module System.Console.CmdTheLine.Term
   (
   -- * Evaluating Terms
   -- ** Simple command line programs
-    eval, exec, run
+    eval, exec, run, unwrap
 
   -- ** Multi-command command line programs
-  , evalChoice, execChoice, runChoice
+  , evalChoice, execChoice, runChoice, unwrapChoice
+
+  -- * Exit information for testing
+  , EvalExit(..)
   ) where
 
 import System.Console.CmdTheLine.Common
@@ -22,7 +26,7 @@ import qualified System.Console.CmdTheLine.Trie    as T
 
 import Control.Applicative hiding ( (<|>), empty )
 import Control.Arrow       ( second )
-import Control.Monad       ( join )
+import Control.Monad       ( join, (<=<) )
 
 import Control.Monad.Trans.Error
 
@@ -30,7 +34,7 @@ import Data.List    ( find, sort )
 import Data.Maybe   ( fromJust )
 
 import System.Environment ( getArgs )
-import System.Exit        ( exitFailure )
+import System.Exit        ( exitFailure, exitSuccess )
 import System.IO
 
 import Text.PrettyPrint
@@ -41,17 +45,21 @@ import Text.Parsec
 -- EvalErr
 --
 
-data EvalFail = Help  HelpFormat (Maybe String)
+-- | Information about the way a 'Term' exited early.  Obtained by either
+-- 'unwrap'ing or 'unwrapChoice'ing some Term.  Handy for testing programs when
+-- it is undesirable to exit execution of the entire program when a Term exits
+-- early.
+data EvalExit = Help  HelpFormat (Maybe String)
               | Usage Doc
               | Msg   Doc
               | Version
 
-instance Error EvalFail where
+instance Error EvalExit where
   strMsg = Msg . text
 
-type EvalErr = ErrorT EvalFail IO
+type EvalErr = ErrorT EvalExit IO
 
-fromFail :: Fail -> EvalFail
+fromFail :: Fail -> EvalExit
 fromFail (MsgFail   d)         = Msg   d
 fromFail (UsageFail d)         = Usage d
 fromFail (HelpFail  fmt mName) = Help  fmt mName
@@ -59,16 +67,18 @@ fromFail (HelpFail  fmt mName) = Help  fmt mName
 fromErr :: Err a -> EvalErr a
 fromErr = mapErrorT . fmap $ either (Left . fromFail) Right
 
-printEvalErr :: EvalInfo -> EvalFail -> IO ()
+printEvalErr :: EvalInfo -> EvalExit -> IO a
 printEvalErr ei fail = case fail of
   Usage doc -> do E.printUsage   stderr ei doc
                   exitFailure
   Msg   doc -> do E.print        stderr ei doc
                   exitFailure
-  Version   -> H.printVersion stdout ei
-  Help fmt mName -> either print (H.print fmt stdout) (eEi mName)
+  Version   -> do H.printVersion stdout ei
+                  exitSuccess
+  Help fmt mName -> do either print (H.print fmt stdout) (eEi mName)
+                       exitSuccess
   where
-  -- Either we are in the default term, or the commands name is in `mName`.
+  -- Either we are in the default Term, or the commands name is in `mName`.
   eEi = maybe (Right ei { term = main ei }) process
 
   -- Either the command name exists, or else it does not and we're in trouble.
@@ -149,9 +159,14 @@ addStdOpts ei = ( hLookup, vLookup, ei' )
 -- Evaluation of Terms
 --
 
+-- For testing of term, unwrap the value but do not handle errors.
+unwrapTerm :: EvalInfo -> Yield a -> [String] -> IO (Either EvalExit a)
+unwrapTerm ei yield args = runErrorT $ do
+  cl <- fromErr $ create (snd $ term ei) args
+  fromErr $ yield ei cl
+
 evalTerm :: EvalInfo -> Yield a -> [String] -> IO a
-evalTerm ei yield args = do
-  eResult <- runErrorT $ do
+evalTerm ei yield args = either handleErr return <=< runErrorT $ do
     ( cl, mResult ) <- fromErr $ do
       cl      <- create (snd $ term ei') args
       mResult <- helpArg ei' cl
@@ -168,7 +183,6 @@ evalTerm ei yield args = do
                                        else success
       _                       -> success
 
-  either handleErr return eResult
   where
   ( helpArg, versionArg, ei' ) = addStdOpts ei
 
@@ -179,8 +193,7 @@ evalTerm ei yield args = do
   defName  = termName . fst $ main ei'
   evalName = termName . fst $ term ei'
 
-  handleErr e = do printEvalErr ei' e
-                   exitFailure
+  handleErr = printEvalErr ei'
 
 
 chooseTerm :: TermInfo -> [( TermInfo, a )] -> [String]
@@ -215,16 +228,22 @@ chooseTermEi mainTerm choices = EvalInfo command command eiChoices
 -- User-Facing Functionality
 --
 
+type ProcessTo a b = EvalInfo -> Yield a -> [String] -> IO b
+
+-- Share code between 'eval' and 'unwrap' with this HOF.
+evalBy :: ProcessTo a b -> [String] -> ( Term a, TermInfo ) -> IO b
+evalBy method args termPair@( term, _ ) = method ei yield args
+  where
+  (Term _ yield) = term
+  command = mkCommand termPair
+  ei = EvalInfo command command []
+
 -- | 'eval' @args ( term, termInfo )@ allows the user to pass @args@ directly to
 -- the evaluation mechanism.  This is useful if some kind of pre-processing is
 -- required.  If you do not need to pre-process command line arguments, use one
 -- of 'exec' or 'run'.  On failure the program exits.
 eval :: [String] -> ( Term a, TermInfo ) -> IO a
-eval args termPair@( term, _ ) = evalTerm ei yield args
-  where
-  (Term _ yield) = term
-  command = mkCommand termPair
-  ei = EvalInfo command command []
+eval = evalBy evalTerm
 
 -- | 'exec' @( term, termInfo )@ executes a command line program, directly
 -- grabbing the command line arguments from the environment and returning the
@@ -240,10 +259,16 @@ exec term = do
 run :: ( Term (IO a), TermInfo ) -> IO a
 run = join . exec
 
--- | 'evalChoice' @args mainTerm choices@ is analogous to 'eval', but for
--- programs that provide a choice of commands.
-evalChoice :: [String] -> ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a
-evalChoice args mainTerm@( term, termInfo ) choices = do
+-- | 'unwrap' @args ( term, termInfo )@ unwraps a 'Term' without handling errors.
+-- The intent is for use in testing of Terms where the programmer would like
+-- to consult error state without the program exiting.
+unwrap :: [String] -> ( Term a, TermInfo ) -> IO (Either EvalExit a)
+unwrap = evalBy unwrapTerm
+
+-- Share code between 'evalChoice' and 'unwrapChoice' with this HOF.
+evalChoiceBy :: ProcessTo a b
+             -> [String] -> ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO b
+evalChoiceBy method args mainTerm@( term, termInfo ) choices = do
   ( chosen, args' ) <- either handleErr return =<<
     (runErrorT . fromErr $ chooseTerm termInfo eiChoices args)
 
@@ -252,14 +277,18 @@ evalChoice args mainTerm@( term, termInfo ) choices = do
 
       ei = EvalInfo ( chosen, ais ) mainEi eiChoices
 
-  evalTerm ei yield args'
+  method ei yield args'
   where
   mainEi    = mkCommand mainTerm
   eiChoices = map mkCommand choices
 
   -- Only handles errors caused by chooseTerm.
-  handleErr e = do printEvalErr (chooseTermEi mainTerm choices) e
-                   exitFailure
+  handleErr = printEvalErr (chooseTermEi mainTerm choices)
+
+-- | 'evalChoice' @args mainTerm choices@ is analogous to 'eval', but for
+-- programs that provide a choice of commands.
+evalChoice :: [String] -> ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a
+evalChoice = evalChoiceBy evalTerm
 
 -- | Analogous to 'exec', but for programs that provide a choice of commands.
 execChoice :: ( Term a, TermInfo ) -> [( Term a, TermInfo )] -> IO a
@@ -270,3 +299,8 @@ execChoice main choices = do
 -- | Analogous to 'run', but for programs that provide a choice of commands.
 runChoice :: ( Term (IO a), TermInfo ) -> [( Term (IO a), TermInfo )] -> IO a
 runChoice main = join . execChoice main
+
+-- | Analogous to 'unwrap', but for programs that provide a choice of commands.
+unwrapChoice :: [String] -> ( Term a, TermInfo ) -> [( Term a, TermInfo )]
+             -> IO (Either EvalExit a)
+unwrapChoice = evalChoiceBy unwrapTerm

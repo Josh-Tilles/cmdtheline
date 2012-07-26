@@ -1,5 +1,7 @@
-CmdTheLine v0.2
+CmdTheLine v0.2.1
 ===============
+
+[![Build Status](https://secure.travis-ci.org/eli-frey/cmdtheline.png)](http://travis-ci.org/eli-frey/cmdtheline)
 
 Command line option parsing with applicative functors.
 
@@ -43,4 +45,4 @@ LICENSE
 -------
 MIT - See file 'LICENSE' for details.
 
-Copyright Â© 2012 Vincent Elisha Lee Frey
+Copyright © 2012 Vincent Elisha Lee Frey

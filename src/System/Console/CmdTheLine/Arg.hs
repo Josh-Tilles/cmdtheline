@@ -53,7 +53,7 @@ newtype Arg a = Arg (Term a)
 --
 -- [@optDoc@]  :: String: defaults to @\"\"@.
 --
--- [@otpSec@]  :: String: defautts to @\"OPTIONS\"@.
+-- [@optSec@]  :: String: defaults to @\"OPTIONS\"@.
 data OptInfo = OInf
   { unOInf  :: ArgInfo
   , optName :: String
